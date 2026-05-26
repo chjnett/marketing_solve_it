@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # Database Settings
     DATABASE_URL: str = "sqlite:///./threadpulse.db"
     DB_MODE: str = "local"  # local or d1
+    ENABLE_MOCK_DATA: bool = False
     
     # Cloudflare D1 Credentials (Required if DB_MODE is "d1")
     CLOUDFLARE_ACCOUNT_ID: str = ""

@@ -8,6 +8,9 @@ from typing import List
 
 router = APIRouter()
 
+def _is_live_token(token: str) -> bool:
+    return bool(token) and not token.startswith("mock-token")
+
 class ScheduleRequest(BaseModel):
     title: str
     text: List[str]
@@ -31,11 +34,11 @@ async def schedule_campaign(req: ScheduleRequest, session: Session = Depends(get
         statement = select(LinkedAccount).where(LinkedAccount.persona_preset == req.persona)
         account = session.exec(statement).first()
         
-        if account and account.access_token and account.access_token != "mock-token":
+        if account and _is_live_token(account.access_token) and account.threads_user_id:
             try:
                 # Call Threads API to actually publish!
                 post_id = await threads_api_service.publish_thread_chain(
-                    user_id=account.username,
+                    user_id=account.threads_user_id,
                     text_list=req.text,
                     access_token=account.access_token
                 )
@@ -109,4 +112,3 @@ def delete_campaign(id: int, session: Session = Depends(get_session)):
     session.delete(campaign)
     session.commit()
     return {"success": True}
-

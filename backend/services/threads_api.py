@@ -1,6 +1,7 @@
 import httpx
 import asyncio
 from typing import List, Optional
+from urllib.parse import urlencode
 from config import settings
 
 class ThreadsAPIService:
@@ -16,7 +17,7 @@ class ThreadsAPIService:
             "scope": "threads_basic,threads_content_publish",
             "response_type": "code"
         }
-        query = "&".join(f"{k}={v}" for k, v in params.items())
+        query = urlencode(params)
         return f"{self.oauth_url}/authorize?{query}"
 
     async def exchange_code_for_token(self, code: str) -> dict:

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session, select
 from typing import Optional
+from urllib.parse import quote_plus
 from database import get_session
 from models import User, LinkedAccount
 from services.threads_api import threads_api_service
@@ -60,7 +61,10 @@ async def threads_callback(
         # Exchange code for long-lived access token
         token_data = await threads_api_service.exchange_code_for_token(code)
         access_token = token_data.get("access_token")
-        user_id = str(token_data.get("user_id"))
+        raw_user_id = token_data.get("user_id")
+        if not access_token or not raw_user_id:
+            raise Exception("Missing access token or Threads user id from token exchange.")
+        user_id = str(raw_user_id)
         
         # Fetch user profile
         profile = await threads_api_service.get_user_profile(user_id, access_token)
@@ -71,12 +75,14 @@ async def threads_callback(
         
         if existing_acc:
             existing_acc.access_token = access_token
+            existing_acc.threads_user_id = user_id
             existing_acc.token_status = "valid"
             existing_acc.name = profile.get("name")
             existing_acc.avatar = profile.get("avatar")
             session.add(existing_acc)
         else:
             new_acc = LinkedAccount(
+                threads_user_id=user_id,
                 username=profile.get("username"),
                 name=profile.get("name"),
                 avatar=profile.get("avatar"),
@@ -92,6 +98,6 @@ async def threads_callback(
         # Redirect back to frontend accounts dashboard
         return RedirectResponse(url="http://localhost:3000/dashboard/accounts")
     except Exception as e:
-        # Development fallback: Redirect even if Meta credentials fail, showing a mock integration success
         print(f"[OAuth Callback Error] Meta API failed: {e}")
-        return RedirectResponse(url="http://localhost:3000/dashboard/accounts?integration=mock_success")
+        err = quote_plus(str(e))
+        return RedirectResponse(url=f"http://localhost:3000/dashboard/accounts?integration=error&message={err}")

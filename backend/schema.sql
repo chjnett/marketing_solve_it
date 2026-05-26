@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS User (
 
 CREATE TABLE IF NOT EXISTS LinkedAccount (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    threads_user_id TEXT,
     username TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     avatar TEXT DEFAULT '💻',

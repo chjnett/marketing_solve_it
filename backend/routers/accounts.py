@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from database import get_session
 from models import LinkedAccount
+from config import settings
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -18,6 +19,7 @@ class UpdatePersonaRequest(BaseModel):
     required_keywords: Optional[str] = None
 
 class CreateAccountRequest(BaseModel):
+    threads_user_id: Optional[str] = None
     username: str
     name: str
     avatar: str
@@ -31,9 +33,10 @@ def list_accounts(session: Session = Depends(get_session)):
     accounts = session.exec(select(LinkedAccount)).all()
     
     # If no accounts exist in D1/SQLite, initialize with default accounts for seamless testing
-    if not accounts:
+    if not accounts and settings.ENABLE_MOCK_DATA:
         mock_accs = [
             LinkedAccount(
+                threads_user_id="10000000000000001",
                 username="tech_insights",
                 name="Tech Insights (메인)",
                 avatar="💻",
@@ -50,6 +53,7 @@ def list_accounts(session: Session = Depends(get_session)):
                 required_keywords="Next.js, CS근본"
             ),
             LinkedAccount(
+                threads_user_id="10000000000000002",
                 username="market_pulse",
                 name="Market Pulse",
                 avatar="📈",
@@ -66,6 +70,7 @@ def list_accounts(session: Session = Depends(get_session)):
                 required_keywords="FOMO, 수익률, 독설"
             ),
             LinkedAccount(
+                threads_user_id="10000000000000003",
                 username="viral_hacker",
                 name="Viral Hacker",
                 avatar="🎨",
@@ -82,6 +87,7 @@ def list_accounts(session: Session = Depends(get_session)):
                 required_keywords="바이럴, 해킹, 트렌드"
             ),
             LinkedAccount(
+                threads_user_id="10000000000000004",
                 username="booster_alpha",
                 name="Booster Alpha",
                 avatar="🚀",
@@ -113,6 +119,7 @@ def create_account(req: CreateAccountRequest, session: Session = Depends(get_ses
         raise HTTPException(status_code=400, detail="Account already linked")
         
     new_acc = LinkedAccount(
+        threads_user_id=req.threads_user_id,
         username=req.username,
         name=req.name,
         avatar=req.avatar,

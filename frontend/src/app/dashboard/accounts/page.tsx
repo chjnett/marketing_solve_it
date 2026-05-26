@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Users, Plus, RefreshCw, Key, ShieldCheck, AlertCircle, 
@@ -34,74 +35,12 @@ interface LinkedAccount {
   requiredKeywords: string;
 }
 
-const mockAccounts: LinkedAccount[] = [
-  {
-    id: 1,
-    username: "tech_insights",
-    name: "Tech Insights (메인)",
-    avatar: "💻",
-    persona: "개발자 구루 (Tech Insights)",
-    personaPreset: "tech_guru",
-    tokenStatus: "valid",
-    role: "main",
-    expiresIn: "58일 남음",
-    aggroLevel: 2,
-    emojiPreference: "normal",
-    lineBreaks: "normal",
-    forbiddenKeywords: "가즈아, 영차",
-    requiredKeywords: "Next.js, CS근본",
-  },
-  {
-    id: 2,
-    username: "market_pulse",
-    name: "Market Pulse",
-    avatar: "📈",
-    persona: "투자전문가 (Market Pulse)",
-    personaPreset: "investor",
-    tokenStatus: "warning",
-    role: "booster",
-    expiresIn: "2일 남음 (만료 임박)",
-    aggroLevel: 3,
-    emojiPreference: "often",
-    lineBreaks: "frequent",
-    forbiddenKeywords: "장기투자, 안전성",
-    requiredKeywords: "FOMO, 수익률, 독설",
-  },
-  {
-    id: 3,
-    username: "viral_hacker",
-    name: "Viral Hacker",
-    avatar: "🎨",
-    persona: "마케팅 구루 (Viral Hacker)",
-    personaPreset: "marketer",
-    tokenStatus: "expired",
-    role: "booster",
-    expiresIn: "만료됨 (재인증 필요)",
-    aggroLevel: 2,
-    emojiPreference: "often",
-    lineBreaks: "normal",
-    forbiddenKeywords: "어려운 용어, 학술적",
-    requiredKeywords: "바이럴, 해킹, 트렌드",
-  },
-  {
-    id: 4,
-    username: "booster_alpha",
-    name: "Booster Alpha",
-    avatar: "🚀",
-    persona: "일반 교양/유머",
-    personaPreset: "general",
-    tokenStatus: "valid",
-    role: "booster",
-    expiresIn: "45일 남음",
-    aggroLevel: 1,
-    emojiPreference: "normal",
-    lineBreaks: "normal",
-    forbiddenKeywords: "극단적, 어그로",
-    requiredKeywords: "일상, 꿀팁, 공감",
-  },
-];
-
 export default function AccountsPage() {
+  const searchParams = useSearchParams();
+  const integrationErrorMessage =
+    searchParams.get("integration") === "error"
+      ? searchParams.get("message") || "Meta OAuth 연동에 실패했습니다."
+      : "";
   const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
   const [isLinking, setIsLinking] = useState(false);
   const [activeTab, setActiveTab] = useState<"threads" | "instagram" | "x">("threads");
@@ -118,6 +57,13 @@ export default function AccountsPage() {
 
   // Notification Toast state
   const [notification, setNotification] = useState({ show: false, message: "" });
+
+  const triggerToast = (message: string) => {
+    setNotification({ show: true, message });
+    setTimeout(() => {
+      setNotification({ show: false, message: "" });
+    }, 3500);
+  };
 
   const mapBackendAccount = (acc: any): LinkedAccount => ({
     id: acc.id,
@@ -152,28 +98,8 @@ export default function AccountsPage() {
 
   const handleLinkMeta = () => {
     setIsLinking(true);
-    setTimeout(() => {
-      const newAccount: LinkedAccount = {
-        id: accounts.length + 1,
-        username: `new_creator_${Math.floor(Math.random() * 100)}`,
-        name: "New Brand Channel",
-        avatar: "✨",
-        persona: "일반 교양/유머",
-        personaPreset: "general",
-        tokenStatus: "valid",
-        role: "booster",
-        expiresIn: "60일 남음",
-        aggroLevel: 2,
-        emojiPreference: "normal",
-        lineBreaks: "normal",
-        forbiddenKeywords: "",
-        requiredKeywords: "",
-      };
-      setAccounts(prev => [...prev, newAccount]);
-      setIsLinking(false);
-      
-      triggerToast("🎉 새 Meta Threads 계정이 정상적으로 연동되었습니다.");
-    }, 1500);
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    window.location.href = `${apiBaseUrl}/api/v1/auth/threads/login`;
   };
 
   const handleDelete = async (id: number) => {
@@ -245,14 +171,6 @@ export default function AccountsPage() {
     }
   };
 
-  const triggerToast = (message: string) => {
-    setNotification({ show: true, message });
-    setTimeout(() => {
-      setNotification({ show: false, message: "" });
-    }, 3500);
-  };
-
-
   return (
     <div className="flex flex-col gap-8 pb-12">
       {/* Accounts Header */}
@@ -280,6 +198,12 @@ export default function AccountsPage() {
       </div>
 
       {/* Platform Navigation Tabs */}
+      {integrationErrorMessage ? (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 px-4 py-3 text-xs text-rose-200">
+          Meta 연동 오류: {integrationErrorMessage}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-3 border-b border-white/5 pb-4 shrink-0">
         <button 
           onClick={() => setActiveTab("threads")}

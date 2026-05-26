@@ -10,6 +10,7 @@ class User(SQLModel, table=True):
 
 class LinkedAccount(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    threads_user_id: Optional[str] = Field(default=None, index=True)
     username: str = Field(unique=True)
     name: str
     avatar: str = "💻"

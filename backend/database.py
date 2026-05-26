@@ -1,5 +1,6 @@
 import httpx
 from sqlmodel import SQLModel, create_engine, Session
+from sqlalchemy import text
 from config import settings
 
 # Create engine dynamically based on DB_MODE
@@ -23,6 +24,13 @@ def init_db():
     if getattr(settings, "DB_MODE", "local") == "local":
         print("[ThreadPulse Database] Creating local SQLite tables if not exist...")
         SQLModel.metadata.create_all(engine)
+        # Backfill for existing local DBs created before threads_user_id was introduced.
+        with engine.begin() as conn:
+            cols = conn.execute(text("PRAGMA table_info(LinkedAccount)")).fetchall()
+            col_names = {c[1] for c in cols}
+            if "threads_user_id" not in col_names:
+                conn.execute(text("ALTER TABLE LinkedAccount ADD COLUMN threads_user_id TEXT"))
+                print("[ThreadPulse Database] Added LinkedAccount.threads_user_id column for compatibility.")
     else:
         print("[ThreadPulse Database] D1 Cloud Mode Active: Skipping local table auto-creation.")
 
