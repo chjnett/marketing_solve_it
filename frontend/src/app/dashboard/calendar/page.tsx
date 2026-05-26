@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, 
@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { api } from "@/lib/api";
 
 // Calendar campaign mock data
 interface ScheduledItem {
@@ -19,17 +20,9 @@ interface ScheduledItem {
   status: "scheduled" | "published" | "failed";
 }
 
-const mockCampaigns: ScheduledItem[] = [
-  { id: 1, day: 12, time: "18:00", title: "AI 시장 전망 & 투자 트렌드 분석", persona: "투자전문가", status: "published" },
-  { id: 2, day: 15, time: "14:30", title: "Next.js App Router 최적화 기법", persona: "개발자 구루", status: "published" },
-  { id: 3, day: 26, time: "18:30", title: "스레드 크로스 부스팅 알고리즘 설명", persona: "마케팅 전문가", status: "scheduled" },
-  { id: 4, day: 26, time: "21:00", title: "SaaS 플랫폼 디자인 시스템 설계", persona: "개발자 구루", status: "scheduled" },
-  { id: 5, day: 28, time: "09:00", title: "글로벌 테크 마켓 브리핑", persona: "투자전문가", status: "scheduled" },
-];
-
 export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date(2026, 4, 26)); // May 2026
-  const [campaigns, setCampaigns] = useState<ScheduledItem[]>(mockCampaigns);
+  const [campaigns, setCampaigns] = useState<ScheduledItem[]>([]);
   const [draggedItem, setDraggedItem] = useState<ScheduledItem | null>(null);
 
   const daysInMonth = 31;
@@ -40,6 +33,59 @@ export default function CalendarPage() {
   const emptyCells = Array.from({ length: startOffset }, (_, i) => null);
   const allCells = [...emptyCells, ...dateCells];
 
+  const mapBackendCampaign = (c: any): ScheduledItem => {
+    let day = 26;
+    let timeStr = "12:00";
+    try {
+      if (c.time && c.time.includes("-")) {
+        const parts = c.time.split(" ")[0].split("-");
+        day = parseInt(parts[2], 10);
+        timeStr = c.time.split(" ")[1] || "12:00";
+      } else if (c.time && c.time.includes(":")) {
+        timeStr = c.time;
+        day = 26; // Default to today's column if only time exists
+      }
+    } catch (err) {
+      day = 26;
+    }
+    
+    return {
+      id: c.id,
+      day: isNaN(day) ? 26 : day,
+      time: timeStr,
+      title: c.title,
+      persona: c.persona || "일반 교양",
+      status: c.status || "scheduled"
+    };
+  };
+
+  // Load campaigns from D1 database
+  const loadCampaigns = async () => {
+    try {
+      const rawCampaigns = await api.getCampaigns();
+      
+      // If database is empty, fall back to mock campaigns to ensure a visual layout
+      if (rawCampaigns.length === 0) {
+        const defaultMockCampaigns: ScheduledItem[] = [
+          { id: 1001, day: 12, time: "18:00", title: "AI 시장 전망 & 투자 트렌드 분석", persona: "투자전문가", status: "published" },
+          { id: 1002, day: 15, time: "14:30", title: "Next.js App Router 최적화 기법", persona: "개발자 구루", status: "published" },
+          { id: 1003, day: 26, time: "18:30", title: "스레드 크로스 부스팅 알고리즘 설명", persona: "마케팅 전문가", status: "scheduled" },
+          { id: 1004, day: 26, time: "21:00", title: "SaaS 플랫폼 디자인 시스템 설계", persona: "개발자 구루", status: "scheduled" },
+          { id: 1005, day: 28, time: "09:00", title: "글로벌 테크 마켓 브리핑", persona: "투자전문가", status: "scheduled" },
+        ];
+        setCampaigns(defaultMockCampaigns);
+      } else {
+        setCampaigns(rawCampaigns.map(mapBackendCampaign));
+      }
+    } catch (err) {
+      console.error("Failed to fetch campaigns from D1 database", err);
+    }
+  };
+
+  useEffect(() => {
+    loadCampaigns();
+  }, []);
+
   const handleDragStart = (item: ScheduledItem) => {
     setDraggedItem(item);
   };
@@ -48,15 +94,27 @@ export default function CalendarPage() {
     e.preventDefault();
   };
 
-  const handleDrop = (day: number) => {
+  const handleDrop = async (day: number) => {
     if (!draggedItem) return;
     
-    // Update the item's scheduled day
+    // Update local state first for instant visual feedback
     setCampaigns(prev => 
       prev.map(item => item.id === draggedItem.id ? { ...item, day } : item)
     );
+
+    // Persist rescheduling in D1 database
+    try {
+      const formattedDate = `2026-05-${String(day).padStart(2, "0")} ${draggedItem.time}`;
+      await api.updateCampaignTime(draggedItem.id, formattedDate);
+    } catch (err) {
+      console.error("Failed to reschedule campaign in database", err);
+      // Reload campaigns to rollback in case of API failure
+      loadCampaigns();
+    }
+    
     setDraggedItem(null);
   };
+
 
   return (
     <div className="flex flex-col gap-8 pb-12">

@@ -1,5 +1,5 @@
 // Premium API Client for ThreadPulse with robust mock fallbacks
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 // Custom helper to handle API calls with automatic mock fallbacks when API is offline
 async function apiFetch<T>(
@@ -8,7 +8,19 @@ async function apiFetch<T>(
   fallbackData: T
 ): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
+  const method = options.method || "GET";
+  
+  console.log(`\n%c[ThreadPulse API] 🚀 Dispatching Endpoint: ${method} ${url}`, "color: #A000FF; font-weight: bold;");
+  if (options.body) {
+    try {
+      console.log(`%c[ThreadPulse API] 📦 Request Body:`, "color: #94A3B8;", JSON.parse(options.body as string));
+    } catch {
+      console.log(`%c[ThreadPulse API] 📦 Request Body (Raw):`, "color: #94A3B8;", options.body);
+    }
+  }
+
   try {
+    const startTime = performance.now();
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -17,18 +29,26 @@ async function apiFetch<T>(
       },
     });
 
+    const duration = (performance.now() - startTime).toFixed(1);
+    console.log(`%c[ThreadPulse API] 📥 Response Status: ${response.status} (${response.statusText}) in ${duration}ms`, "color: #10B981; font-weight: bold;");
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(`HTTP error! status: ${response.status} (${response.statusText})`);
     }
 
-    return (await response.json()) as T;
+    const data = await response.json();
+    console.log(`%c[ThreadPulse API] 🎉 Success! Response JSON parsed:`, "color: #10B981;", data);
+    return data as T;
   } catch (error) {
-    console.warn(`[ThreadPulse API Client] Offline or error connecting to ${url}. Using high-fidelity mock fallback.`, error);
+    console.error(`%c[ThreadPulse API] ❌ Network/CORS Error connecting to ${url}:`, "color: #EF4444; font-weight: bold;", error);
+    console.warn(`%c[ThreadPulse API] ⚠️ Offline or connection refused. Falling back to mock data.`, "color: #F59E0B; font-weight: bold;");
+    
     // Simulate natural network latency for the mock data
     await new Promise((resolve) => setTimeout(resolve, 1000));
     return fallbackData;
   }
 }
+
 
 export const api = {
   // 1. POST /api/v1/auth/login
@@ -92,4 +112,140 @@ export const api = {
       }
     );
   },
+
+  // 5. GET /api/v1/accounts
+  async getAccounts() {
+    return apiFetch<any[]>(
+      "/api/v1/accounts",
+      { method: "GET" },
+      [
+        {
+          id: 1,
+          username: "tech_insights",
+          name: "Tech Insights (메인)",
+          avatar: "💻",
+          persona: "개발자 구루 (Tech Insights)",
+          personaPreset: "tech_guru",
+          tokenStatus: "valid",
+          role: "main",
+          expiresIn: "58일 남음",
+          aggroLevel: 2,
+          emojiPreference: "normal",
+          lineBreaks: "normal",
+          forbiddenKeywords: "가즈아, 영차",
+          requiredKeywords: "Next.js, CS근본",
+        },
+        {
+          id: 2,
+          username: "market_pulse",
+          name: "Market Pulse",
+          avatar: "📈",
+          persona: "투자전문가 (Market Pulse)",
+          personaPreset: "investor",
+          tokenStatus: "warning",
+          role: "booster",
+          expiresIn: "2일 남음 (만료 임박)",
+          aggroLevel: 3,
+          emojiPreference: "often",
+          lineBreaks: "frequent",
+          forbiddenKeywords: "장기투자, 안전성",
+          requiredKeywords: "FOMO, 수익률, 독설",
+        },
+        {
+          id: 3,
+          username: "viral_hacker",
+          name: "Viral Hacker",
+          avatar: "🎨",
+          persona: "마케팅 구루 (Viral Hacker)",
+          personaPreset: "marketer",
+          tokenStatus: "expired",
+          role: "booster",
+          expiresIn: "만료됨 (재인증 필요)",
+          aggroLevel: 2,
+          emojiPreference: "often",
+          lineBreaks: "normal",
+          forbiddenKeywords: "어려운 용어, 학술적",
+          requiredKeywords: "바이럴, 해킹, 트렌드",
+        },
+        {
+          id: 4,
+          username: "booster_alpha",
+          name: "Booster Alpha",
+          avatar: "🚀",
+          persona: "일반 교양/유머",
+          personaPreset: "general",
+          tokenStatus: "valid",
+          role: "booster",
+          expiresIn: "45일 남음",
+          aggroLevel: 1,
+          emojiPreference: "normal",
+          lineBreaks: "normal",
+          forbiddenKeywords: "극단적, 어그로",
+          requiredKeywords: "일상, 꿀팁, 공감",
+        }
+      ]
+    );
+  },
+
+  // 6. PUT /api/v1/accounts/{id}/persona
+  async updateAccountPersona(id: number, data: any) {
+    const snakeData = {
+      name: data.name,
+      persona: data.persona,
+      persona_preset: data.personaPreset,
+      aggro_level: data.aggroLevel,
+      emoji_preference: data.emojiPreference,
+      line_breaks: data.lineBreaks,
+      forbidden_keywords: data.forbiddenKeywords,
+      required_keywords: data.requiredKeywords,
+    };
+    return apiFetch<any>(
+      `/api/v1/accounts/${id}/persona`,
+      {
+        method: "PUT",
+        body: JSON.stringify(snakeData),
+      },
+      { success: true, ...data }
+    );
+  },
+
+  // 7. DELETE /api/v1/accounts/{id}
+  async deleteAccount(id: number) {
+    return apiFetch<any>(
+      `/api/v1/accounts/${id}`,
+      { method: "DELETE" },
+      { success: true }
+    );
+  },
+
+  // 8. GET /api/v1/campaigns
+  async getCampaigns() {
+    return apiFetch<any[]>(
+      "/api/v1/campaigns",
+      { method: "GET" },
+      []
+    );
+  },
+
+  // 9. PUT /api/v1/campaigns/{id}/time
+  async updateCampaignTime(id: number, time: string) {
+    return apiFetch<any>(
+      `/api/v1/campaigns/${id}/time`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ time }),
+      },
+      { success: true }
+    );
+  },
+
+  // 10. DELETE /api/v1/campaigns/{id}
+  async deleteCampaign(id: number) {
+    return apiFetch<any>(
+      `/api/v1/campaigns/${id}`,
+      { method: "DELETE" },
+      { success: true }
+    );
+  }
 };
+

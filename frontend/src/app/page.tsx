@@ -11,22 +11,22 @@ export default function LandingPage() {
   const features = [
     {
       title: "스마트 예약 (Smart Scheduling)",
-      description: "Meta Threads 최적 시간대 분석을 통해 오디언스가 가장 활성화된 타이밍에 맞춰 글을 자동 발행합니다.",
+      description: "Threads, Instagram, X 최적 시간대 분석을 통해 오디언스가 가장 활성화된 타이밍에 맞춰 글을 자동 발행하는 소셜 마케팅 자동화를 제공합니다.",
       icon: Zap,
     },
     {
       title: "AI 카피 생성 (AI Copilot)",
-      description: "Gemini 1.5 엔진을 활용하여 주제 키워드와 어그로 레벨 조정을 통해 바이럴 가능한 완벽한 스레드 타래를 만듭니다.",
+      description: "Gemini 1.5 엔진을 활용하여 주제 키워드와 어그로 레벨 조정을 통해 바이럴 가능한 멀티 플랫폼 콘텐츠 타래를 마케팅 오토메이션으로 생성합니다.",
       icon: Sparkles,
     },
     {
       title: "크로스 부스팅 (Cross Boosting)",
-      description: "본인 소유의 서브 계정들을 스케줄러와 연동하여 발행 직후 자연스러운 교차 댓글 및 인게이지먼트를 자가 형성합니다.",
+      description: "소유한 서브 계정들을 연동하여 발행 직후 자연스러운 교차 댓글 및 인게이지먼트를 자동 형성하여 트래픽 오토메이션을 구현합니다.",
       icon: Target,
     },
     {
-      title: "다중 계정 관리 (Multi-Account)",
-      description: "여러 개의 스레드 브랜드 채널을 대시보드 하나에서 손쉽게 전환하며 토큰 관리부터 통계 분석까지 원스톱으로 처리합니다.",
+      title: "다중 채널 및 계정 관리 (Multi-Channel)",
+      description: "Threads, Instagram, X 등 다양한 소셜 마케팅 채널을 단 하나의 대시보드에서 효율적으로 제어하고 채널을 확장 관리합니다.",
       icon: Users,
     },
   ];
@@ -106,18 +106,18 @@ export default function LandingPage() {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/5 bg-white/5 text-[10px] uppercase font-bold tracking-widest text-muted-foreground backdrop-blur-sm">
             <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            <span>AI Threads Copilot</span>
+            <span>AI Omni-Channel Marketing Automation</span>
           </div>
 
           {/* Headline: Clean Monochrome layout */}
           <h1 className="text-4xl sm:text-6xl md:text-8xl font-black font-heading tracking-tighter leading-[0.95] text-white">
-            AUTOMATE YOUR THREADS,<br />
-            <span className="text-white/40">AMPLIFY YOUR PULSE.</span>
+            AI-DRIVEN OMNICHANNEL<br />
+            <span className="text-white/40">MARKETING AUTOMATION.</span>
           </h1>
 
           {/* Subtext */}
           <p className="max-w-2xl text-sm sm:text-base md:text-lg text-muted-foreground font-normal leading-relaxed">
-            최첨단 Gemini AI 카피 생성과 자가 교차 부스팅 기술로 계정 도달률과 참여도를 폭발적으로 극대화합니다.
+            최첨단 Gemini AI 기반 다중 플랫폼(Threads, Instagram, X) 소셜 마케팅 자동화 솔루션. 계정 노출부터 자가 교차 부스팅까지 원스톱으로 트래픽을 폭발시킵니다.
           </p>
 
           {/* CTAs */}
@@ -158,10 +158,10 @@ export default function LandingPage() {
         <div className="flex flex-col items-center text-center gap-4 mb-16">
           <span className="text-[10px] uppercase tracking-widest text-purple-400 font-bold">FEATURES</span>
           <h2 className="text-2xl md:text-4xl font-extrabold font-heading text-white">
-            스레드 채널 성장을 위한 유일한 솔루션
+            소셜 채널 성장을 위한 차세대 자동화 솔루션
           </h2>
           <p className="max-w-lg text-muted-foreground text-xs md:text-sm">
-            간결한 디자인과 간편한 대시보드로 복잡한 스레드 마케팅 운영을 완전히 자동화하세요.
+            간결한 디자인과 간편한 대시보드로 복잡한 다중 플랫폼 마케팅 자동화 운영을 완전히 무중력으로 구축하세요.
           </p>
         </div>
 

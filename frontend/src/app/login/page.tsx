@@ -15,8 +15,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 const loginSchema = zod.object({
-  email: zod.string().email({ message: "올바른 이메일 형식을 입력해주세요." }),
-  password: zod.string().min(6, { message: "비밀번호는 최소 6자 이상이어야 합니다." }),
+  email: zod.string().email({ message: "올바른 이메일 형식을 입력해주세요." }).or(zod.literal("")),
+  password: zod.string().min(6, { message: "비밀번호는 최소 6자 이상이어야 합니다." }).or(zod.literal("")),
 });
 
 const registerSchema = zod.object({
@@ -61,7 +61,7 @@ function AuthFormContent() {
     formState: { errors: loginErrors },
   } = useForm({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: "demo@threadpulse.com", password: "password123" },
   });
 
   const {
@@ -74,7 +74,9 @@ function AuthFormContent() {
   });
 
   const onLogin = (data: any) => {
-    loginMutation.mutate({ email: data.email, password: data.password });
+    const email = data.email || "demo@threadpulse.com";
+    const password = data.password || "password123";
+    loginMutation.mutate({ email, password });
   };
 
   const onRegister = (data: any) => {
@@ -243,6 +245,9 @@ function AuthFormContent() {
                     <Button type="submit" disabled={isLoading} className="glowing-btn bg-white text-black hover:bg-white/90 text-sm font-bold h-10 rounded-lg transition-all mt-2">
                       {isLoading ? "로그인 중..." : "대시보드 입장"}
                     </Button>
+                    <span className="text-[10px] text-muted-foreground text-center mt-1">
+                      ℹ️ 데모 모드: 이메일/비밀번호가 비어있어도 버튼만 누르면 바로 대시보드로 입장 가능합니다.
+                    </span>
                   </motion.form>
                 )}
               </AnimatePresence>

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Sparkles, Smartphone, Edit3, Trash2, Send, 
@@ -27,24 +29,42 @@ export default function BuilderPage() {
   ]);
 
   const generateMutation = useMutation({
-    mutationFn: ({ topic, persona, level }: any) => 
-      api.generateThreads(topic, persona, level),
+    mutationFn: ({ topic, persona, level }: any) => {
+      console.log(`%c[Builder Page] 📡 useMutation triggered. Calling api.generateThreads with topic: "${topic}", persona: "${persona}", aggroLevel: ${level}`, "color: #3B82F6; font-weight: bold;");
+      return api.generateThreads(topic, persona, level);
+    },
     onSuccess: (data) => {
+      console.log(`%c[Builder Page] 🏆 Mutation successful! Setting generatedThreads state to:`, "color: #10B981; font-weight: bold;", data);
       setGeneratedThreads(data);
     },
+    onError: (err) => {
+      console.error(`%c[Builder Page] 💥 Mutation error occurred:`, "color: #EF4444; font-weight: bold;", err);
+    }
   });
 
   const scheduleMutation = useMutation({
-    mutationFn: ({ title, text, time, persona }: any) => 
-      api.scheduleCampaign(title, text, time, persona),
+    mutationFn: ({ title, text, time, persona }: any) => {
+      console.log(`%c[Builder Page] 📡 Schedule campaign mutation triggered. Calling api.scheduleCampaign...`, "color: #3B82F6; font-weight: bold;");
+      return api.scheduleCampaign(title, text, time, persona);
+    },
     onSuccess: (data) => {
+      console.log(`%c[Builder Page] 🏆 Campaign scheduled successfully:`, "color: #10B981; font-weight: bold;", data);
       alert(`🎉 스레드 캠페인이 정상 등록되었습니다!\n(캠페인 ID: ${data.campaignId}, 상태: ${data.status})`);
     },
+    onError: (err) => {
+      console.error(`%c[Builder Page] 💥 Campaign schedule error:`, "color: #EF4444; font-weight: bold;", err);
+    }
   });
 
   const isGenerating = generateMutation.isPending;
 
   const handleGenerate = () => {
+    console.log(`\n%c[Builder Page] 🖱️ AI Generate Button Clicked!`, "color: #F59E0B; font-weight: bold;");
+    console.log(`[Builder Page] - Topic: "${topic}"`);
+    console.log(`[Builder Page] - Persona: "${persona}"`);
+    console.log(`[Builder Page] - Aggro Level: ${aggroLevel[0]}`);
+    console.log(`[Builder Page] - Tone: "${tone}"`);
+    
     generateMutation.mutate({
       topic,
       persona,
@@ -53,31 +73,28 @@ export default function BuilderPage() {
   };
 
   const handleSchedule = () => {
+    console.log(`%c[Builder Page] 🖱️ Campaign Schedule Button Clicked!`, "color: #F59E0B; font-weight: bold;");
     scheduleMutation.mutate({
       title: topic || "AI 생성 스레드 캠페인",
       text: generatedThreads,
       time: "오늘 18:30",
       persona,
     });
-  };�� 3가지 방법 (정보 공유 타래 👇)`,
-        `2/ 첫째, 주제를 매우 구체적으로 쪼개고 'Outfitt' 폰트 수준의 가독성 좋은 Big Typography로 도입부를 구성할 것.`,
-        `3/ 둘째, ThreadPulse의 AI 페르소나(${persona === "tech_guru" ? "개발자 구루" : "투자전문가"}) 분석 기능으로 오디언스의 지적 결핍을 공략하세요.`,
-        `4/ 마지막으로 발행 즉시 자가 서브 계정 부스팅 알고리즘을 태우세요. 알고리즘 도달률이 300% 이상 차이납니다. #비즈니스 #스레드마케팅`,
-      ]);
-      setIsGenerating(false);
-    }, 2000);
   };
 
   const handleEditThread = (index: number, newText: string) => {
+    console.log(`[Builder Page] ✏️ Editing thread index ${index}: "${newText}"`);
     const updated = [...generatedThreads];
     updated[index] = newText;
     setGeneratedThreads(updated);
   };
 
   const handleDeleteThread = (index: number) => {
+    console.log(`[Builder Page] 🗑️ Deleting thread index ${index}`);
     const updated = generatedThreads.filter((_, i) => i !== index);
     setGeneratedThreads(updated);
   };
+
 
   return (
     <div className="h-[calc(100vh-8.5rem)] flex flex-col gap-6 -m-4 p-4 overflow-hidden">
@@ -212,16 +229,16 @@ export default function BuilderPage() {
 
           {/* Right Panel: Live Mobile Preview */}
           <ResizablePanel defaultSize={50} minSize={30}>
-            <div className="h-full bg-black/40 flex items-center justify-center p-8 overflow-y-auto">
+            <div className="h-full bg-black/40 flex items-start justify-center p-4 overflow-y-auto">
               
               {/* Phone Container */}
-              <div className="w-[340px] h-[640px] rounded-[48px] border-[8px] border-[#1E1E1E] bg-[#0A0A0A] shadow-2xl relative overflow-hidden flex flex-col p-4">
+              <div className="w-[280px] min-h-[480px] rounded-[36px] border-[6px] border-[#1E1E1E] bg-[#0A0A0A] shadow-2xl relative overflow-hidden flex flex-col p-3 shrink-0">
                 
                 {/* Phone Notch/Island */}
-                <div className="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-4 rounded-full bg-[#1E1E1E] z-20" />
+                <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-24 h-3.5 rounded-full bg-[#1E1E1E] z-20" />
 
                 {/* Phone Header */}
-                <div className="flex items-center justify-between border-b border-white/5 pb-3 mt-4 px-2 shrink-0">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2 mt-3 px-1.5 shrink-0">
                   <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-1.5">
                     <Smartphone className="w-3.5 h-3.5 text-muted-foreground" /> 실시간 모바일 프리뷰
                   </span>
@@ -233,7 +250,7 @@ export default function BuilderPage() {
                 </div>
 
                 {/* Phone Feed Scroll Area */}
-                <div className="flex-1 overflow-y-auto py-4 px-2 flex flex-col gap-4 scrollbar-none relative">
+                <div className="flex-1 overflow-y-auto py-3 px-1.5 flex flex-col gap-3 scrollbar-none relative">
                   <AnimatePresence mode="popLayout">
                     {isGenerating ? (
                       // Skeleton UI Loader
@@ -309,7 +326,7 @@ export default function BuilderPage() {
                 </div>
 
                 {/* Phone Footer CTA */}
-                <div className="border-t border-white/5 pt-3 pb-1 px-2 shrink-0 flex gap-2">
+                <div className="border-t border-white/5 pt-2 pb-1 px-1.5 shrink-0 flex gap-1.5">
                   <Button variant="outline" className="flex-1 border-white/5 hover:bg-white/5 text-[10px] h-8 rounded-lg text-white">
                     <Layers className="w-3.5 h-3.5 mr-1 text-purple-400" /> 임시저장
                   </Button>
