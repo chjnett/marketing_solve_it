@@ -1,180 +1,453 @@
-# ThreadPulse: Meta Threads API 실제 연동 및 백엔드 통합 가이드
+# ThreadPulse: Meta Threads API 연동 완전 가이드
 
-본 문서는 ThreadPulse 마케팅 자동화 SaaS 플랫폼에 **실제 Meta Graph API (Threads Endpoint)**를 연동하기 위해 설계된 종합 가이드라인입니다. 
+본 문서는 ThreadPulse에 **실제 Meta Threads API**를 연동하기 위한 **A to Z 종합 가이드**입니다.
+개발자가 직접 해야 할 조작과, 이미 구현된 백엔드 로직, 그리고 실제 발행까지의 전체 흐름을 단계별로 안내합니다.
 
-에이전트가 자동 구축한 **FastAPI 백엔드 시스템**의 활용 방법과, API 연동을 위해 **사용자(USER)가 Meta Developer Console에서 직접 조작해야 하는 작업 리스트**를 상세히 제공합니다.
-
----
-
-## 1. 사용자(USER)가 직접 진행해야 하는 사항 (Checklist for User)
-
-Meta Graph API는 앱 심사 및 Meta 계정 소유권을 요구하므로, 아래 과정을 Meta 개발자 포털에서 직접 수행해주셔야 합니다.
-
-### [Step 1] Meta 개발자 계정 등록 및 앱 생성
-1. [Meta for Developers](https://developers.facebook.com) 포털에 로그인합니다.
-2. 우측 상단의 **[내 앱]** -> **[앱 만들기]** 버튼을 클릭합니다.
-3. 앱 유형 선택 화면에서 **[기타]** 또는 **[소비자]** 유형을 선택합니다.
-4. 앱의 세부 정보(앱 이름: `ThreadPulse`, 이메일)를 입력하고 앱을 생성합니다.
-
-### [Step 2] Threads API 제품 구성 및 권한 설정
-1. 앱의 대시보드 좌측 메뉴에서 **[앱에 제품 추가]**를 클릭합니다.
-2. **Threads API** 항목을 찾아 **[설정]** 버튼을 클릭합니다.
-3. Threads API 설정 화면의 **[사용 사례]** -> **[Threads 권한 구성]**으로 이동합니다.
-4. 다음 2가지 핵심 권한을 찾아 **[추가]** 또는 **[구성]**을 클릭합니다:
-   - `threads_basic` : 사용자의 기본 프로필 정보 및 연동 상태 조회 권한.
-   - `threads_content_publish` : 사용자를 대행하여 스레드 게시글(타래)을 자동 발행하는 권한.
-
-### [Step 3] Threads OAuth 2.0 리다이렉션 URI 세팅
-1. 좌측 메뉴의 **[Threads API]** -> **[설정]**으로 이동합니다.
-2. **클라이언트 OAuth 설정** 영역에서 다음 리다이렉션 URL을 등록합니다:
-   - 개발 환경 콜백: `http://localhost:8000/api/v1/auth/threads/callback`
-   - (프로덕션 환경 배포 시 배포 서버 URL 추가 가능)
-3. 변경 사항을 저장합니다.
-
-### [Step 4] 앱 자격 증명(App ID & Secret) 및 테스터 등록
-1. 좌측 메뉴의 **[앱 설정]** -> **[기본 설정]**으로 이동합니다.
-2. 화면 상단의 **앱 ID (Client ID)**와 **앱 비밀번호 (Client Secret)**를 확인하고 복사합니다 (백엔드 `.env` 파일에 기록해야 합니다).
-3. 개발 및 테스트 단계에서는 앱이 *개발 모드* 상태입니다. 따라서 연동을 테스트할 스레드 계정들을 테스터로 추가해야 합니다:
-   - 좌측 메뉴의 **[역할]** -> **[앱 테스터]**로 이동합니다.
-   - **[테스터 추가]**를 클릭하고 연동하고자 하는 스레드 계정의 사용자명(`username`)을 등록합니다.
-   - 해당 스레드 계정으로 인스타그램 로그인 후 **[개발자 테스터 초대 수락]**을 승인해야 정상 활성화됩니다.
+> **⚠️ 중요**: 이 문서는 2025년 최신 Meta Threads API 공식 문서를 기반으로 작성되었습니다.
 
 ---
 
-## 2. 에이전트(AI)가 구현 완료한 내역 (FastAPI Backend Core)
+## 📋 목차
 
-에이전트가 개발자님을 위해 `/backend` 디렉토리에 **Meta Graph API 연동 규격을 완벽하게 따르는 FastAPI 백엔드**를 직접 구성해 두었습니다.
+1. [사전 준비 사항](#1-사전-준비-사항)
+2. [Step 1: Meta 개발자 앱 생성](#2-step-1-meta-개발자-앱-생성)
+3. [Step 2: Threads API 권한 설정](#3-step-2-threads-api-권한-설정)
+4. [Step 3: OAuth 리다이렉션 URI 등록](#4-step-3-oauth-리다이렉션-uri-등록)
+5. [Step 4: 앱 자격 증명 획득 및 테스터 등록](#5-step-4-앱-자격-증명-획득-및-테스터-등록)
+6. [Step 5: 백엔드 환경변수 설정](#6-step-5-백엔드-환경변수-설정)
+7. [Step 6: OAuth 인증 흐름 테스트](#7-step-6-oauth-인증-흐름-테스트)
+8. [Step 7: 스레드 발행 테스트](#8-step-7-스레드-발행-테스트)
+9. [토큰 관리 및 갱신 정책](#9-토큰-관리-및-갱신-정책)
+10. [API 제한 사항 및 주의점](#10-api-제한-사항-및-주의점)
+11. [백엔드 구현 아키텍처](#11-백엔드-구현-아키텍처)
+12. [Cloudflare D1 데이터베이스 설정](#12-cloudflare-d1-데이터베이스-설정)
+13. [프로덕션 배포 체크리스트](#13-프로덕션-배포-체크리스트)
+14. [트러블슈팅 FAQ](#14-트러블슈팅-faq)
 
-### 2.1. 구현된 백엔드 핵심 컴포넌트 구조
+---
+
+## 1. 사전 준비 사항
+
+시작하기 전에 아래 항목을 확인하세요:
+
+| 항목 | 필수 여부 | 설명 |
+|------|-----------|------|
+| Meta (Facebook) 계정 | ✅ 필수 | Meta 개발자 포털 로그인용 |
+| Instagram 계정 | ✅ 필수 | Threads 계정은 Instagram 계정과 연동됨 |
+| Threads 계정 | ✅ 필수 | 실제 발행 대상 계정 (공개 프로필 권장) |
+| Threads 앱 설치 | ✅ 필수 | 모바일에서 테스터 초대 수락에 필요 |
+| Python 3.10+ | ✅ 필수 | FastAPI 백엔드 실행 |
+| Node.js 18+ | ✅ 필수 | Next.js 프론트엔드 실행 |
+
+---
+
+## 2. Step 1: Meta 개발자 앱 생성
+
+### 2.1. Meta 개발자 포털 접속
+
+1. **[Meta for Developers](https://developers.facebook.com)** 포털에 로그인합니다.
+2. 우측 상단의 **[내 앱(My Apps)]** → **[앱 만들기(Create App)]** 버튼을 클릭합니다.
+
+### 2.2. 앱 유형 선택
+
+> **⚠️ 핵심**: 앱 유형 선택 화면에서 반드시 **"Access the Threads API"** 사용 사례를 선택하세요.
+
+다른 유형(Business, Consumer 등)을 선택하면 Threads API 관련 메뉴가 노출되지 않을 수 있습니다.
+
+### 2.3. 앱 정보 입력
+
+| 필드 | 입력값 |
+|------|--------|
+| 앱 이름 | `ThreadPulse` (또는 원하는 이름) |
+| 앱 연락처 이메일 | 본인 이메일 |
+
+입력 후 **[앱 만들기]** 버튼을 클릭하면 앱 대시보드로 이동합니다.
+
+---
+
+## 3. Step 2: Threads API 권한 설정
+
+앱 대시보드 좌측 메뉴에서 **[사용 사례(Use Cases)]** → **[Threads API]** → **[권한 구성(Customize)]** 으로 이동합니다.
+
+### 3.1. 필수 권한 (Scopes)
+
+아래 권한들을 모두 **추가(Add)** 하세요:
+
+| 권한 (Scope) | 용도 | 필수 여부 |
+|-------------|------|-----------|
+| `threads_basic` | 사용자 프로필 조회, 기본 API 접근 | ✅ 필수 (모든 엔드포인트) |
+| `threads_content_publish` | 스레드 게시글 자동 발행 | ✅ 필수 (타래 발행) |
+| `threads_manage_replies` | 답글 작성 (연쇄 타래 발행) | ✅ 권장 |
+| `threads_read_replies` | 답글 조회 | 선택 |
+| `threads_manage_insights` | 게시물 분석/인사이트 조회 | 선택 (대시보드 메트릭용) |
+
+---
+
+## 4. Step 3: OAuth 리다이렉션 URI 등록
+
+### 4.1. 설정 위치
+
+좌측 메뉴 **[Threads API]** → **[설정(Settings)]** 으로 이동합니다.
+
+### 4.2. 콜백 URI 등록
+
+**"Redirect Callback URLs"** 영역에 아래 URL을 정확히 입력합니다:
+
 ```
-backend/
-├── requirements.txt         # 필수 라이브러리 (FastAPI, SQLModel, google-generativeai, httpx 등)
-├── config.py                # 환경 변수 및 Meta API, Gemini Key Config
-├── database.py              # Cloudflare D1 호환 SQLite 커넥터 및 세션
-├── models.py                # SQLModel 기반 계정/캠페인 DB 테이블 정의
-├── main.py                  # CORS 및 라우터 통합 엔트리포인트
-├── services/
-│   ├── threads_api.py       # ⭐️ Meta OAuth 토큰 교환 & 스레드 발행 서비스
-│   └── gemini_api.py        # ⭐️ Gemini 1.5 Pro/Flash 기반 카피 생성 서비스
-└── routers/
-    ├── auth.py              # Meta OAuth 리다이렉션 & 토큰 수령 엔드포인트
-    ├── ai.py                # AI 스레드 타래 실시간 생성 엔드포인트
-    └── campaigns.py         # 캠페인 생성, 발행 및 예약 스케줄링 엔드포인트
+개발 환경 (로컬):
+http://localhost:8000/api/v1/auth/threads/callback
+
+프로덕션 환경 (배포 후 추가):
+https://your-production-domain.com/api/v1/auth/threads/callback
 ```
 
-### 2.2. 백엔드 동작 프로세스 (OAuth & Publishing)
-1. **Meta OAuth 흐름:**
-   - 사용자가 프론트엔드에서 `Meta Threads 계정 연동` 클릭 시 `/api/v1/auth/threads/login`을 호출하여 Meta Graph API 인증 창으로 리다이렉트합니다.
-   - 인증 완료 후 콜백(`/api/v1/auth/threads/callback`)을 통해 메타가 내려준 **Short-lived Code**를 받아 백엔드에서 **Short-lived Access Token**으로 교환합니다.
-   - 이를 다시 60일간 유효한 **Long-lived Access Token**으로 최종 교환한 뒤 데이터베이스(`LinkedAccount` 테이블)에 암호화하여 저장 보관합니다.
-2. **연쇄형 타래 스레드 발행 흐름:**
-   - AI 스레드 빌더에서 작성된 N개의 텍스트 배열을 전달받아 `threads_api.py` 내부의 연쇄 발행 체인이 가동됩니다:
-     - **포스트 1 (루트):** 미디어 컨테이너 생성 (`POST /v1.0/{user-id}/media?text={text}`) -> 컨테이너 상태FINISHED 확인 -> 퍼블리싱 (`POST /v1.0/{user-id}/media_publish?creation_id={container-id}`) -> **루트 포스트 ID 획득**.
-     - **포스트 2~N (서브 답글):** 답글 컨테이너 생성 시 부모 포스트 ID를 인젝션 (`POST /v1.0/{user-id}/media?text={text}&reply_to_id={parent-post-id}`) -> FINISHED 확인 -> 퍼블리싱 -> **연쇄 타래 완성!**
+> **⚠️ 주의**: URL은 **정확히 일치**해야 합니다. 끝에 슬래시(`/`) 유무도 구분됩니다.
+
+변경 사항을 **저장(Save)** 합니다.
 
 ---
 
-## 3. 환경 변수 세팅 및 서버 구동 가이드
+## 5. Step 4: 앱 자격 증명 획득 및 테스터 등록
 
-실제 연동을 기동하기 위해 프로젝트 루트에 환경 변수(`.env`) 세팅이 필요합니다.
+### 5.1. Threads App ID & App Secret 확인
 
-### 3.1. 백엔드 설정 (`backend/.env` 파일 생성)
-`/backend` 디렉토리 내에 `.env` 파일을 생성하고 아래 내용을 입력합니다.
+1. 좌측 메뉴 **[앱 설정(App Settings)]** → **[기본 설정(Basic)]** 으로 이동
+2. 다음 값을 복사합니다:
+   - **Threads App ID** (= Client ID)
+   - **Threads App Secret** (= Client Secret) — "표시" 버튼 클릭 후 복사
+
+> **🔒 보안 주의**: App Secret은 절대 프론트엔드 코드나 Git에 커밋하지 마세요!
+
+### 5.2. 테스터 등록 (개발 모드 필수)
+
+앱이 **개발 모드(Development)** 상태에서는 테스터로 등록된 계정만 OAuth 인증이 가능합니다.
+
+1. 좌측 메뉴 **[앱 역할(App Roles)]** → **[역할(Roles)]** 으로 이동
+2. **[테스터 추가(Add Testers)]** 클릭
+3. 연동할 Threads 계정의 **Instagram 사용자명(username)** 을 입력
+4. **초대 전송(Send Invitation)**
+
+### 5.3. 테스터 초대 수락 (✅ 반드시 필요!)
+
+초대받은 사용자가 반드시 수락해야 합니다:
+
+1. **Threads 앱** (모바일) 또는 **Instagram 설정** 에서 확인
+2. **[설정]** → **[웹사이트 권한(Website Permissions)]** → **[초대(Invites)]**
+3. **ThreadPulse** 앱의 테스터 초대를 **수락(Accept)**
+
+> **💡 Tip**: 초대 수락을 하지 않으면 OAuth 인증 시 `error_reason=user_denied` 가 반환됩니다.
+
+---
+
+## 6. Step 5: 백엔드 환경변수 설정
+
+### 6.1. `backend/.env` 파일 설정
+
 ```env
-# Meta App 자격 증명 (Step 4에서 획득한 값 입력)
-META_APP_ID=your_meta_app_id
-META_APP_SECRET=your_meta_app_secret
+# ========================================
+# Meta Threads API 자격 증명
+# ========================================
+# Step 4에서 획득한 값을 입력하세요
+META_APP_ID=123456789012345
+META_APP_SECRET=abcdef1234567890abcdef1234567890
 META_REDIRECT_URI=http://localhost:8000/api/v1/auth/threads/callback
 
+# ========================================
 # Google Gemini API Key
-GEMINI_API_KEY=your_gemini_api_key
+# ========================================
+GEMINI_API_KEY=AIzaSy_your_gemini_api_key_here
 
-# 데이터베이스 세팅 (로컬 SQLite 파일 매핑)
+# ========================================
+# 데이터베이스 설정
+# ========================================
+# 로컬 개발: SQLite 파일
 DATABASE_URL=sqlite:///./threadpulse.db
+DB_MODE=local
+
+# Cloudflare D1 (프로덕션 전환 시)
+# DB_MODE=d1
+# CLOUDFLARE_ACCOUNT_ID=your_account_id
+# CLOUDFLARE_DATABASE_ID=your_database_id
+# CLOUDFLARE_API_TOKEN=your_api_token
 ```
 
-### 3.2. 프론트엔드 설정 (`frontend/.env.local` 파일 생성)
-`/frontend` 디렉토리 내에 `.env.local` 파일을 생성하고 아래 내용을 입력합니다.
+### 6.2. `frontend/.env.local` 파일 설정
+
 ```env
-# 실제 API 통신 서버 주소 바인딩
+# FastAPI 백엔드 서버 주소
 NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# 리얼 API 통신 모드 활성화 (real 설정 시 Mocking을 우회하여 FastAPI 호출)
-NEXT_PUBLIC_API_MODE=real
 ```
 
 ---
 
-## 4. 백엔드 기동 방법
+## 7. Step 6: OAuth 인증 흐름 테스트
 
-로컬 터미널을 열어 가상환경을 잡고 백엔드를 실행합니다.
-
-1. **의존성 라이브러리 설치:**
-   ```bash
-   cd backend
-   pip3 install -r requirements.txt
-   ```
-2. **서버 실행:**
-   ```bash
-   uvicorn main:app --reload --port 8000
-   ```
-3. **API 문서 확인:** `http://localhost:8000/docs` 에서 Swagger API 명세서를 통해 연동 규격을 눈으로 실시간 확인하고 테스트해 보실 수 있습니다!
-
----
-
-## 5. Cloudflare D1 데이터베이스 생성 및 마이그레이션 가이드 (Production DB Setup)
-
-실제 서비스 및 클라우드 환경에서 Cloudflare D1을 데이터베이스로 사용하기 위한 셋업 절차입니다.
-
-### [Step 1] Cloudflare D1 데이터베이스 생성
-Wrangler CLI가 이미 컴퓨터에 설치되어 있다면 다음 명령어로 간편하게 D1 데이터베이스를 생성할 수 있습니다. (혹은 Cloudflare Dashboard의 **D1** 메뉴에서 직접 만드셔도 됩니다.)
+### 7.1. 서버 기동
 
 ```bash
-# wrangler 로그인 (인증 창이 뜨면 로그인 진행)
+# 터미널 1: 백엔드
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# 터미널 2: 프론트엔드
+cd frontend
+npm run dev
+```
+
+### 7.2. OAuth 인증 흐름도
+
+```
+┌─────────────┐     ①클릭: "Threads 계정 연동"     ┌──────────────┐
+│  프론트엔드   │ ─────────────────────────────────→ │  FastAPI 백엔드 │
+│  (Next.js)   │                                    │  (Port 8000)   │
+└─────────────┘                                     └──────┬───────┘
+                                                           │
+                    ②리다이렉트: Meta OAuth 인증 페이지       │
+                    ┌──────────────────────────────────────┘
+                    ▼
+          ┌─────────────────┐
+          │  Meta 인증 페이지  │  ③사용자가 "허용" 클릭
+          │  (threads.net)   │
+          └────────┬────────┘
+                   │
+    ④콜백 + Authorization Code 전달
+                   │
+                   ▼
+          ┌──────────────────┐
+          │   FastAPI 백엔드   │  ⑤Short-lived Token 교환 (1시간 유효)
+          │                    │  ⑥Long-lived Token 교환 (60일 유효)
+          │                    │  ⑦프로필 정보 조회 (username, name)
+          │                    │  ⑧DB에 계정 정보 + 토큰 저장
+          └──────────────────┘
+```
+
+### 7.3. 수동 테스트 방법
+
+브라우저에서 직접 OAuth 흐름을 테스트할 수 있습니다:
+
+```
+http://localhost:8000/api/v1/auth/threads/login
+```
+
+이 URL을 브라우저에 입력하면 Meta 인증 페이지로 리다이렉트됩니다.
+허용 후 콜백 URL로 돌아오면서 토큰 교환이 자동으로 수행됩니다.
+
+---
+
+## 8. Step 7: 스레드 발행 테스트
+
+### 8.1. 연쇄 타래 발행 프로세스
+
+```
+AI 생성 텍스트 배열: ["포스트1", "포스트2", "포스트3"]
+                │
+                ▼
+    ┌───────────────────────────────────────────────────┐
+    │  POST /v1.0/{user-id}/media                       │
+    │  → media_type=TEXT, text="포스트1"                  │
+    │  → 컨테이너 ID 생성 → 상태 폴링(FINISHED) → 발행     │
+    │  → ✅ 루트 포스트 ID 획득                             │
+    ├───────────────────────────────────────────────────┤
+    │  POST /v1.0/{user-id}/media                       │
+    │  → media_type=TEXT, text="포스트2"                  │
+    │  → reply_to_id={루트 포스트 ID}  ← 답글 연결!        │
+    │  → 컨테이너 → 폴링 → 발행                           │
+    ├───────────────────────────────────────────────────┤
+    │  POST /v1.0/{user-id}/media                       │
+    │  → media_type=TEXT, text="포스트3"                  │
+    │  → reply_to_id={포스트2 ID}  ← 체인 연결!            │
+    │  → 컨테이너 → 폴링 → 발행                           │
+    └───────────────────────────────────────────────────┘
+```
+
+### 8.2. Swagger UI에서 직접 테스트
+
+```
+http://localhost:8000/docs
+```
+
+Swagger UI에서 `/api/v1/ai/generate` 엔드포인트로 AI 텍스트를 생성한 뒤,
+해당 텍스트를 캠페인 발행 API로 전달하여 실제 Threads에 게시할 수 있습니다.
+
+---
+
+## 9. 토큰 관리 및 갱신 정책
+
+### 9.1. 토큰 수명 주기
+
+| 토큰 유형 | 유효기간 | 갱신 가능 여부 |
+|-----------|---------|--------------|
+| Authorization Code | 일회용 (즉시 사용) | ❌ |
+| Short-lived Token | **1시간** | ❌ (Long-lived으로 교환만 가능) |
+| Long-lived Token | **60일** | ✅ (만료 전 갱신 가능) |
+
+### 9.2. 토큰 교환 API (Short → Long)
+
+```http
+GET https://graph.threads.net/access_token
+  ?grant_type=th_exchange_token
+  &client_secret={APP_SECRET}
+  &access_token={SHORT_LIVED_TOKEN}
+```
+
+> **⚠️ 핵심 주의**: `grant_type`은 반드시 **`th_exchange_token`** 입니다!
+> (`fb_exchange_token`이 아닙니다 — Threads 전용 규격)
+
+### 9.3. 토큰 갱신 API (Long → Long 연장)
+
+```http
+GET https://graph.threads.net/refresh_access_token
+  ?grant_type=th_refresh_token
+  &access_token={LONG_LIVED_TOKEN}
+```
+
+**갱신 조건:**
+- 토큰 발급 후 최소 **24시간 경과**해야 갱신 가능
+- 토큰이 **만료되기 전**에만 갱신 가능
+- 갱신 성공 시 새로운 60일짜리 토큰 발급
+
+### 9.4. 자동 갱신 권장 전략
+
+```
+토큰 발급일         갱신 권장 시점          만료일
+──────────────────────────────────────────────────
+Day 0               Day 45~50             Day 60
+  │                    │                     │
+  ├── 24시간 후부터 ──→ │ ← 여기서 자동 갱신    │
+  │   갱신 가능         │    실행 권장          │
+  │                    │                     ├── 만료되면
+  │                    │                     │   재인증 필요!
+```
+
+---
+
+## 10. API 제한 사항 및 주의점
+
+### 10.1. Rate Limits (발행 제한)
+
+| 제한 항목 | 한도 |
+|----------|------|
+| 게시물 발행 | **250 posts / 24시간** (사용자당) |
+| API 호출 | **200 calls / 1시간** (앱당) |
+
+### 10.2. 발행 한도 확인 API
+
+```http
+GET https://graph.threads.net/v1.0/{user-id}/threads_publishing_limit
+  ?fields=quota_usage,config
+  &access_token={TOKEN}
+```
+
+### 10.3. 주의사항
+
+- **비공개(Private) 프로필**: 비공개 프로필 사용자의 토큰은 갱신 가능하나, 90일 후 권한이 만료될 수 있음 (재인증 필요)
+- **컨테이너 상태 폴링**: 미디어 컨테이너 생성 후 `FINISHED` 상태가 될 때까지 폴링 필요 (최대 60초 대기)
+- **텍스트 제한**: 게시글 최대 500자 (이모지, 줄바꿈 포함)
+- **앱 심사(App Review)**: 개발 모드에서는 테스터만 사용 가능. 일반 사용자에게 공개하려면 Meta 앱 심사 통과 필요
+
+---
+
+## 11. 백엔드 구현 아키텍처
+
+### 11.1. 디렉토리 구조
+
+```
+backend/
+├── .env                     # 환경변수 (Git에서 제외됨)
+├── requirements.txt         # 의존성 라이브러리
+├── config.py                # Pydantic Settings (환경변수 자동 로드)
+├── database.py              # SQLite/D1 하이브리드 DB 엔진
+├── models.py                # SQLModel 테이블 (User, LinkedAccount, Campaign)
+├── schema.sql               # Cloudflare D1용 SQL 마이그레이션
+├── main.py                  # FastAPI 앱 엔트리포인트 + CORS
+├── services/
+│   ├── threads_api.py       # ⭐ Meta OAuth + 연쇄 타래 발행 서비스
+│   └── gemini_api.py        # ⭐ Gemini 2.5 Flash AI 카피 생성
+└── routers/
+    ├── auth.py              # /api/v1/auth/* — 로그인, OAuth 콜백
+    ├── ai.py                # /api/v1/ai/* — AI 스레드 생성
+    ├── accounts.py          # /api/v1/accounts/* — 계정 CRUD
+    └── campaigns.py         # /api/v1/campaigns/* — 캠페인 CRUD
+```
+
+### 11.2. 핵심 API 엔드포인트
+
+| Method | Endpoint | 기능 |
+|--------|----------|------|
+| POST | `/api/v1/auth/login` | 이메일/비밀번호 로그인 |
+| GET | `/api/v1/auth/threads/login` | Meta OAuth 인증 페이지 리다이렉트 |
+| GET | `/api/v1/auth/threads/callback` | OAuth 콜백 (토큰 교환 + DB 저장) |
+| POST | `/api/v1/ai/generate` | AI 스레드 타래 생성 (Gemini) |
+| POST | `/api/v1/campaigns/schedule` | 캠페인 예약 등록 |
+| GET | `/api/v1/accounts` | 연동 계정 목록 조회 |
+| PUT | `/api/v1/accounts/{id}/persona` | 페르소나 설정 수정 |
+| DELETE | `/api/v1/accounts/{id}` | 계정 연동 해제 |
+
+---
+
+## 12. Cloudflare D1 데이터베이스 설정
+
+### 12.1. D1 인스턴스 생성
+
+```bash
+# Wrangler CLI 로그인
 npx wrangler login
 
-# D1 데이터베이스 생성 (예: 데이터베이스 이름 'threadpulse-db')
+# D1 데이터베이스 생성
 npx wrangler d1 create threadpulse-db
 ```
 
-생성이 성공하면 터미널에 아래와 같은 설정값이 출력됩니다:
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "threadpulse-db"
-database_id = "xxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-```
-여기서 **`database_id`**를 백엔드 `.env` 파일의 `CLOUDFLARE_DATABASE_ID`에 사용하게 됩니다.
+출력되는 `database_id`를 메모합니다.
 
-### [Step 2] D1 스키마 마이그레이션 실행
-백엔드 루트 디렉토리에 정의된 `schema.sql` 파일을 실행하여 원격 D1 데이터베이스에 필요한 테이블 스키마를 초기화합니다.
+### 12.2. 스키마 마이그레이션
 
 ```bash
-# 원격(Production) D1 데이터베이스에 테이블 생성 실행
 npx wrangler d1 execute threadpulse-db --remote --file=schema.sql
 ```
-이 과정을 통해 Cloudflare 클라우드 상의 D1 데이터베이스에 `User`, `LinkedAccount`, `Campaign` 테이블이 즉시 생성됩니다.
 
-### [Step 3] Cloudflare API 토큰 및 계정 정보 획득
-1. **Account ID**: Cloudflare 대시보드 메인 화면의 우측 하단에서 **Account ID**를 복사합니다.
-2. **API Token 생성**:
-   - [Cloudflare API 토큰 관리 페이지](https://dash.cloudflare.com/profile/api-tokens)로 이동합니다.
-   - **[토큰 생성]** -> **[커스텀 토큰 생성]**을 누릅니다.
-   - 토큰 이름(예: `ThreadPulse D1 Access`)을 지정합니다.
-   - 권한 설정에서 **[계정]** -> **[D1]** -> **[편집]** 권한을 부여합니다.
-   - 토큰을 최종 생성하고 생성된 API Token 키값을 안전하게 복사해둡니다.
+### 12.3. 환경변수 전환
 
-### [Step 4] 백엔드 설정 환경변수 반영 (`backend/.env`)
-이제 획득한 자격증명을 백엔드 설정 파일에 반영하고, 모드를 `d1`로 전환합니다.
-
+`backend/.env`에서:
 ```env
-# Database Mode Toggle: 'local' (SQLite 로컬 파일) -> 'd1' (클라우드플레어 D1 실물 데이터베이스)
 DB_MODE=d1
-
-# Cloudflare D1 연동 정보
-CLOUDFLARE_ACCOUNT_ID=복사한_Cloudflare_Account_ID
-CLOUDFLARE_DATABASE_ID=복사한_D1_Database_ID
-CLOUDFLARE_API_TOKEN=생성한_Cloudflare_API_Token
+CLOUDFLARE_ACCOUNT_ID=복사한_Account_ID
+CLOUDFLARE_DATABASE_ID=복사한_Database_ID
+CLOUDFLARE_API_TOKEN=생성한_API_Token
 ```
 
-설정을 저장한 뒤 백엔드 서버(`uvicorn main:app --reload --port 8000`)를 재기동하면, 이제 모든 데이터 적재(사용자 정보, 연동 계정, 예약 캠페인 등)가 로컬 파일이 아닌 **Cloudflare D1 클라우드 데이터베이스에 직접 실시간으로 저장 및 조회**됩니다!
+---
+
+## 13. 프로덕션 배포 체크리스트
+
+- [ ] Meta 앱 심사(App Review) 신청 및 통과
+- [ ] Meta 앱을 **라이브 모드**로 전환
+- [ ] 프로덕션 콜백 URL 등록 (`https://your-domain.com/api/v1/auth/threads/callback`)
+- [ ] App Secret, API Key 등을 프로덕션 환경변수로 분리
+- [ ] HTTPS 인증서 적용
+- [ ] JWT 인증 미들웨어 실제 구현
+- [ ] 토큰 자동 갱신 배경 작업(cron) 설정
+- [ ] Rate Limit 모니터링 구현
+- [ ] 에러 로깅 및 알림 시스템 구성
+
+---
+
+## 14. 트러블슈팅 FAQ
+
+### Q1. OAuth 인증 시 "Invalid redirect_uri" 에러
+→ Meta 앱 설정의 **Redirect Callback URLs**에 등록된 URL과 백엔드 `.env`의 `META_REDIRECT_URI`가 **정확히** 일치하는지 확인하세요. (끝의 `/` 유무 포함)
+
+### Q2. "User must accept Threads tester invitation" 에러
+→ 테스터 초대를 전송했더라도, 해당 사용자가 Threads 앱 설정에서 **직접 수락**해야 합니다.
+→ Threads 앱 → 설정 → 웹사이트 권한 → 초대 에서 확인
+
+### Q3. 토큰 교환 시 "Invalid grant_type" 에러
+→ Threads API는 `th_exchange_token`을 사용합니다 (`fb_exchange_token`이 아님!)
+
+### Q4. 컨테이너 상태가 계속 "IN_PROGRESS"
+→ 컨테이너 상태 폴링 시 최대 60초까지 대기 후에도 `FINISHED`가 아니면 재시도하세요.
+→ 텍스트에 금지된 콘텐츠가 포함되어 있을 수 있습니다.
+
+### Q5. "Application request limit reached" 에러
+→ Rate Limit 초과. 24시간 내 250개 이상의 게시물을 발행하지 않도록 주의하세요.
+→ `/threads_publishing_limit` 엔드포인트로 현재 사용량을 확인하세요.

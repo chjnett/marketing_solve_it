@@ -39,10 +39,11 @@ class ThreadsAPIService:
             short_token = short_token_data.get("access_token")
             user_id = short_token_data.get("user_id")
 
-            # 2.2. Exchange long-lived token (60 days)
+            # 2.2. Exchange for long-lived token (60 days)
+            # ⚠️ Threads API uses 'th_exchange_token' (NOT 'fb_exchange_token')
             exchange_url = "https://graph.threads.net/access_token"
             params = {
-                "grant_type": "fb_exchange_token",
+                "grant_type": "th_exchange_token",
                 "client_secret": settings.META_APP_SECRET,
                 "access_token": short_token
             }
@@ -60,6 +61,24 @@ class ThreadsAPIService:
                 "access_token": long_token_data.get("access_token"),
                 "user_id": user_id,
                 "expires_in": long_token_data.get("expires_in", 5184000)
+            }
+
+    async def refresh_long_lived_token(self, long_lived_token: str) -> dict:
+        """Refresh a long-lived token (must be >24h old and not yet expired) for another 60 days"""
+        async with httpx.AsyncClient() as client:
+            url = "https://graph.threads.net/refresh_access_token"
+            params = {
+                "grant_type": "th_refresh_token",
+                "access_token": long_lived_token
+            }
+            res = await client.get(url, params=params)
+            if res.status_code != 200:
+                raise Exception(f"Failed to refresh token: {res.text}")
+            
+            data = res.json()
+            return {
+                "access_token": data.get("access_token"),
+                "expires_in": data.get("expires_in", 5184000)
             }
 
     async def get_user_profile(self, user_id: str, access_token: str) -> dict:
