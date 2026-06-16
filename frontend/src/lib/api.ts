@@ -97,6 +97,41 @@ export const api = {
     );
   },
 
+  // 3.5 POST /api/v1/ai/generate-card-news
+  async generateCardNews(topic: string, persona: string, level: number) {
+    return apiFetch(
+      "/api/v1/ai/generate-card-news",
+      {
+        method: "POST",
+        body: JSON.stringify({ topic, persona, level }),
+      },
+      [
+        {
+          "image_prompt": "Dark background with red gradient warning icon centered, minimalist dramatic design, cinematic lighting",
+          "text": `🔥 [어그로 레벨 ${level}] 스레드 마케팅 자동화\n가장 충격적인 3가지 방법`,
+          "image_base64": null
+        },
+        {
+          "image_prompt": "Mobile smartphone screen with clean typography UI design, dark theme, glowing text elements",
+          "text": `1. 주제를 매우 구체적으로 쪼개고\n가독성 좋은 폰트를 쓸 것`,
+          "image_base64": null
+        },
+        {
+          "image_prompt": "Artificial intelligence brain icon with holographic analysis charts floating, futuristic neon blue glow",
+          "text": `2. ThreadPulse AI 페르소나(${
+            persona === "tech_guru" ? "개발자 구루" : "투자전문가"
+          })로\n오디언스의 지적 결핍을 공략`,
+          "image_base64": null
+        },
+        {
+          "image_prompt": "Rocket launching into space with data traffic lines surging upward, vibrant colorful illustration",
+          "text": "알고리즘 도달률 300% 이상 차이\n#비즈니스 #스레드마케팅",
+          "image_base64": null
+        }
+      ]
+    );
+  },
+
   // 4. POST /api/v1/campaigns/schedule
   async scheduleCampaign(title: string, text: string[], time: string, persona: string) {
     return apiFetch(

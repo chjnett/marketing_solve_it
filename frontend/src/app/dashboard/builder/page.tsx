@@ -21,6 +21,8 @@ export default function BuilderPage() {
   const [aggroLevel, setAggroLevel] = useState([2]);
   const [persona, setPersona] = useState("tech_guru");
   const [tone, setTone] = useState("informative");
+  const [generateMode, setGenerateMode] = useState<"thread" | "card_news">("thread");
+  const [generatedCardNews, setGeneratedCardNews] = useState<any[]>([]);
   
   const [generatedThreads, setGeneratedThreads] = useState<string[]>([
     "Threads는 텍스트 중심의 소통을 위한 완벽한 공간입니다. 🚀 오늘부터 ThreadPulse를 활용하여 비즈니스의 심박수를 높여보세요! #스레드 #자동화",
@@ -42,6 +44,20 @@ export default function BuilderPage() {
     }
   });
 
+  const generateCardNewsMutation = useMutation({
+    mutationFn: ({ topic, persona, level }: any) => {
+      console.log(`%c[Builder Page] 📡 useMutation triggered. Calling api.generateCardNews with topic: "${topic}", persona: "${persona}", aggroLevel: ${level}`, "color: #3B82F6; font-weight: bold;");
+      return api.generateCardNews(topic, persona, level);
+    },
+    onSuccess: (data) => {
+      console.log(`%c[Builder Page] 🏆 Mutation successful! Setting generatedCardNews state to:`, "color: #10B981; font-weight: bold;", data);
+      setGeneratedCardNews(data);
+    },
+    onError: (err) => {
+      console.error(`%c[Builder Page] 💥 Mutation error occurred:`, "color: #EF4444; font-weight: bold;", err);
+    }
+  });
+
   const scheduleMutation = useMutation({
     mutationFn: ({ title, text, time, persona }: any) => {
       console.log(`%c[Builder Page] 📡 Schedule campaign mutation triggered. Calling api.scheduleCampaign...`, "color: #3B82F6; font-weight: bold;");
@@ -56,27 +72,45 @@ export default function BuilderPage() {
     }
   });
 
-  const isGenerating = generateMutation.isPending;
+  const isGenerating = generateMode === "thread" ? generateMutation.isPending : generateCardNewsMutation.isPending;
 
   const handleGenerate = () => {
     console.log(`\n%c[Builder Page] 🖱️ AI Generate Button Clicked!`, "color: #F59E0B; font-weight: bold;");
+    console.log(`[Builder Page] - Mode: "${generateMode}"`);
     console.log(`[Builder Page] - Topic: "${topic}"`);
     console.log(`[Builder Page] - Persona: "${persona}"`);
     console.log(`[Builder Page] - Aggro Level: ${aggroLevel[0]}`);
     console.log(`[Builder Page] - Tone: "${tone}"`);
     
-    generateMutation.mutate({
-      topic,
-      persona,
-      level: aggroLevel[0],
-    });
+    try {
+      const modeStr = Array.isArray(generateMode) ? generateMode[0] : generateMode;
+      if (modeStr === "thread") {
+        console.log(`[Builder Page] 🚀 Starting Thread Generation...`);
+        generateMutation.mutate({
+          topic,
+          persona,
+          level: aggroLevel[0],
+        });
+      } else if (modeStr === "card_news") {
+        console.log(`[Builder Page] 🚀 Starting Card News Generation...`);
+        generateCardNewsMutation.mutate({
+          topic,
+          persona,
+          level: aggroLevel[0],
+        });
+      } else {
+        console.error(`[Builder Page] ❌ Invalid generateMode detected: ${generateMode}`);
+      }
+    } catch (err) {
+      console.error(`[Builder Page] ❌ Exception caught during handleGenerate:`, err);
+    }
   };
 
   const handleSchedule = () => {
     console.log(`%c[Builder Page] 🖱️ Campaign Schedule Button Clicked!`, "color: #F59E0B; font-weight: bold;");
     scheduleMutation.mutate({
       title: topic || "AI 생성 스레드 캠페인",
-      text: generatedThreads,
+      text: generateMode === "thread" ? generatedThreads : generatedCardNews.map(c => c.text),
       time: "오늘 18:30",
       persona,
     });
@@ -113,11 +147,40 @@ export default function BuilderPage() {
         <ResizablePanelGroup orientation="horizontal">
           
           {/* Left Panel: Control Panel */}
-          <ResizablePanel defaultSize={50} minSize={30}>
+          <ResizablePanel defaultSize={generateMode === "card_news" ? 35 : 50} minSize={25}>
             <div className="h-full p-8 overflow-y-auto flex flex-col gap-6 scrollbar-thin">
               <div className="flex flex-col gap-1">
                 <h3 className="font-heading text-base font-bold text-white">1. 기획 및 파라미터 제어</h3>
                 <p className="text-[10px] text-muted-foreground">AI가 어떤 성향과 톤앤매너로 작성할지 상세 조정합니다.</p>
+              </div>
+
+              {/* Generate Mode Toggle */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-muted-foreground">콘텐츠 형태</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setGenerateMode("thread")}
+                    className={`flex items-center gap-2 text-xs px-4 py-2 rounded-lg h-9 border transition-all cursor-pointer ${
+                      generateMode === "thread"
+                        ? "bg-white text-black border-white font-bold"
+                        : "bg-transparent text-white/70 border-white/10 hover:border-white/30"
+                    }`}
+                  >
+                    <Layers className="w-4 h-4" /> 스레드 타래 (텍스트)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGenerateMode("card_news")}
+                    className={`flex items-center gap-2 text-xs px-4 py-2 rounded-lg h-9 border transition-all cursor-pointer ${
+                      generateMode === "card_news"
+                        ? "bg-white text-black border-white font-bold"
+                        : "bg-transparent text-white/70 border-white/10 hover:border-white/30"
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" /> 카드뉴스 (이미지)
+                  </button>
+                </div>
               </div>
 
               {/* Topic Input */}
@@ -205,30 +268,64 @@ export default function BuilderPage() {
               <hr className="border-white/5" />
 
               {/* Submit CTA */}
-              <Button
+              <button
+                type="button"
                 onClick={handleGenerate}
                 disabled={isGenerating || !topic}
-                className="glowing-btn bg-white text-black hover:bg-white/90 font-bold h-11 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`w-full h-11 rounded-xl font-bold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all border-0 outline-0
+                  ${isGenerating
+                    ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white cursor-not-allowed animate-pulse"
+                    : "bg-white text-black hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                  }`}
               >
                 {isGenerating ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-black" />
-                    스레드 문장 조립 중...
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    {generateMode === "card_news" ? "카드뉴스 생성 중..." : "스레드 문장 조립 중..."}
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4 text-black fill-black" />
-                    AI 타래 스레드 생성
+                    <Sparkles className="w-4 h-4 fill-black" />
+                    {generateMode === "card_news" ? "AI 카드뉴스 생성" : "AI 타래 스레드 생성"}
                   </>
                 )}
-              </Button>
+              </button>
+
+              {/* Progress Indicator */}
+              {isGenerating && (
+                <div className="flex flex-col gap-3 p-4 rounded-xl border border-purple-500/30 bg-purple-500/5 mt-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping" />
+                    <span className="text-[11px] text-purple-300 font-semibold">
+                      Gemini AI가 콘텐츠를 생성하고 있습니다
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {(generateMode === "card_news"
+                      ? ["페르소나 분석 중", "이미지 프롬프트 설계 중", "카드별 카피 작성 중", "JSON 구조화 완료 중"]
+                      : ["페르소나 분석 중", "어그로 레벨 계산 중", "스레드 초안 작성 중", "문장 리듬 최적화 중"]
+                    ).map((step, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div
+                          className="w-3.5 h-3.5 rounded-full border-2 border-purple-400/50 border-t-purple-400 animate-spin shrink-0"
+                          style={{ animationDelay: `${i * 0.2}s`, animationDuration: "1s" }}
+                        />
+                        <span className="text-[10px] text-white/60">{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="w-full h-1 rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full animate-[shimmer_2s_ease-in-out_infinite]" style={{width: "60%", animation: "pulse 1.5s ease-in-out infinite"}} />
+                  </div>
+                </div>
+              )}
             </div>
           </ResizablePanel>
 
           <ResizableHandle className="bg-white/5 w-[1px] hover:bg-purple-500/30 transition-colors" />
 
           {/* Right Panel: Live Mobile Preview */}
-          <ResizablePanel defaultSize={50} minSize={30}>
+          <ResizablePanel defaultSize={generateMode === "card_news" ? 35 : 50} minSize={30}>
             <div className="h-full bg-black/40 flex items-start justify-center p-4 overflow-y-auto">
               
               {/* Phone Container */}
@@ -251,41 +348,102 @@ export default function BuilderPage() {
 
                 {/* Phone Feed Scroll Area */}
                 <div className="flex-1 overflow-y-auto py-3 px-1.5 flex flex-col gap-3 scrollbar-none relative">
-                  <AnimatePresence mode="popLayout">
-                    {isGenerating ? (
-                      // Skeleton UI Loader
-                      <div className="flex flex-col gap-6">
-                        {[1, 2, 3].map((idx) => (
-                          <div key={idx} className="flex gap-3">
-                            <Skeleton className="w-8 h-8 rounded-full bg-white/5" />
-                            <div className="flex-1 flex flex-col gap-2">
-                              <Skeleton className="w-24 h-3 bg-white/5" />
-                              <Skeleton className="w-full h-12 bg-white/5" />
-                            </div>
+                  {/* Mode indicator badge */}
+                  <div className={`text-[9px] px-2 py-0.5 rounded-full self-start font-bold mb-1 ${generateMode === "card_news" ? "bg-purple-500/30 text-purple-300 border border-purple-500/50" : "bg-blue-500/20 text-blue-300 border border-blue-500/30"}`}>
+                    {generateMode === "card_news" ? "📸 카드뉴스 모드" : "💬 스레드 모드"}
+                  </div>
+
+                  {/* Skeleton Loader */}
+                  {isGenerating && (
+                    <div className="flex flex-col gap-6">
+                      {[1, 2, 3].map((idx) => (
+                        <div key={idx} className="flex gap-3">
+                          <Skeleton className="w-8 h-8 rounded-full bg-white/5" />
+                          <div className="flex-1 flex flex-col gap-2">
+                            <Skeleton className="w-24 h-3 bg-white/5" />
+                            <Skeleton className="w-full h-12 bg-white/5" />
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      // Real-time Threads Feed Mockup
-                      generatedThreads.map((thread, idx) => (
-                        <motion.div
-                          key={idx}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="flex gap-3 relative group"
-                        >
-                          {/* Thread Connector Line */}
-                          {idx < generatedThreads.length - 1 && (
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Card News Feed */}
+                  {!isGenerating && generateMode === "card_news" && (
+                    <div className="flex flex-col gap-5 pb-4">
+                      {generatedCardNews.length === 0 && (
+                        <div className="flex items-center justify-center text-xs text-muted-foreground py-8">
+                          카드뉴스를 생성해주세요.
+                        </div>
+                      )}
+                      {generatedCardNews.map((card, idx) => (
+                        <div key={idx} className="flex gap-3 relative group">
+                          {idx < generatedCardNews.length - 1 && (
                             <div className="absolute left-[15px] top-8 bottom-[-24px] w-[1px] bg-white/10" />
                           )}
-
-                          {/* Profile Avatar */}
                           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center font-bold text-xs shrink-0 text-white shadow-lg">
                             {persona === "tech_guru" ? "💻" : persona === "investor" ? "📈" : "🎨"}
                           </div>
+                          <div className="flex-1 flex flex-col gap-1 min-w-0">
+                            <span className="text-[11px] font-bold text-white">
+                              {persona === "tech_guru" ? "tech_insights" : persona === "investor" ? "market_pulse" : "viral_hacker"}
+                            </span>
+                            <textarea
+                              value={card.text}
+                              onChange={(e) => {
+                                const updated = [...generatedCardNews];
+                                updated[idx].text = e.target.value;
+                                setGeneratedCardNews(updated);
+                              }}
+                              rows={3}
+                              className="w-full bg-transparent border-0 outline-0 p-0 text-xs text-white/90 leading-relaxed resize-none focus:ring-0 focus:border-0 hover:bg-white/5 focus:bg-white/5 rounded p-1 transition-colors"
+                            />
+                            <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-white/10 mt-1.5 shadow-md cursor-pointer">
+                              {card.image_base64 ? (
+                                <img
+                                  src={`data:image/png;base64,${card.image_base64}`}
+                                  alt={`Slide ${idx + 1}`}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-purple-900/40 to-blue-900/40 gap-2">
+                                  <Sparkles className="w-6 h-6 text-purple-400 opacity-50" />
+                                  <span className="text-[9px] text-white/40 text-center px-2">이미지 생성 중...</span>
+                                </div>
+                              )}
+                              <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/90 to-transparent">
+                                <p className="text-[9px] text-white/80 leading-tight line-clamp-2">
+                                  <Sparkles className="w-2.5 h-2.5 inline mr-1 text-purple-400" />
+                                  {card.image_prompt}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 text-muted-foreground text-[10px] mt-2">
+                              <span className="flex items-center gap-1 hover:text-rose-400 transition-colors cursor-pointer">
+                                <Smile className="w-3 h-3" /> 리액션
+                              </span>
+                              <span className="flex items-center gap-1 hover:text-purple-400 transition-colors cursor-pointer">
+                                <MessageCircle className="w-3 h-3" /> {idx * 7 + 12}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                          {/* Thread bubble body */}
+                  {/* Thread Feed */}
+                  {!isGenerating && generateMode === "thread" && (
+                    <div className="flex flex-col gap-3 pb-4">
+                      {generatedThreads.map((thread, idx) => (
+                        <div key={idx} className="flex gap-3 relative group">
+                          {idx < generatedThreads.length - 1 && (
+                            <div className="absolute left-[15px] top-8 bottom-[-24px] w-[1px] bg-white/10" />
+                          )}
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center font-bold text-xs shrink-0 text-white shadow-lg">
+                            {persona === "tech_guru" ? "💻" : persona === "investor" ? "📈" : "🎨"}
+                          </div>
                           <div className="flex-1 flex flex-col gap-1 min-w-0">
                             <div className="flex justify-between items-center">
                               <span className="text-[11px] font-bold text-white">
@@ -300,16 +458,12 @@ export default function BuilderPage() {
                                 </button>
                               </div>
                             </div>
-
-                            {/* Editable textarea mockup */}
                             <textarea
                               value={thread}
                               onChange={(e) => handleEditThread(idx, e.target.value)}
                               rows={3}
-                              className="w-full bg-transparent border-0 outline-0 p-0 text-xs text-white/90 leading-relaxed resize-none focus:ring-0 focus:border-0 hover:bg-white/5 focus:bg-white/5 rounded p-1 transition-colors border-dashed border-white/5"
+                              className="w-full bg-transparent border-0 outline-0 p-0 text-xs text-white/90 leading-relaxed resize-none focus:ring-0 focus:border-0 hover:bg-white/5 focus:bg-white/5 rounded p-1 transition-colors"
                             />
-
-                            {/* Thread micro reactions */}
                             <div className="flex items-center gap-3 text-muted-foreground text-[10px] mt-1">
                               <span className="flex items-center gap-1 hover:text-rose-400 transition-colors cursor-pointer">
                                 <Smile className="w-3 h-3" /> 리액션
@@ -319,10 +473,10 @@ export default function BuilderPage() {
                               </span>
                             </div>
                           </div>
-                        </motion.div>
-                      ))
-                    )}
-                  </AnimatePresence>
+                        </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Phone Footer CTA */}
@@ -343,6 +497,60 @@ export default function BuilderPage() {
 
             </div>
           </ResizablePanel>
+
+          {/* Third Panel: Original Image Gallery (Only in Card News mode) */}
+          {generateMode === "card_news" && (
+            <>
+              <ResizableHandle className="bg-white/5 w-[1px] hover:bg-purple-500/30 transition-colors" />
+              <ResizablePanel defaultSize={30} minSize={20}>
+                <div className="h-full p-4 overflow-y-auto bg-black/60 flex flex-col gap-4 border-l border-white/5">
+                  <div className="flex flex-col gap-1 pb-2 border-b border-white/5">
+                    <h3 className="font-heading text-sm font-bold text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-purple-400" /> AI 생성 원본 이미지
+                    </h3>
+                    <p className="text-[10px] text-muted-foreground">프롬프트를 바탕으로 실시간 렌더링된 고화질 이미지입니다.</p>
+                  </div>
+                  
+                  {generatedCardNews.length === 0 && !isGenerating && (
+                    <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">
+                      카드뉴스를 생성해주세요.
+                    </div>
+                  )}
+
+                  {isGenerating && (
+                    <div className="flex flex-col gap-4">
+                      {[1, 2, 3].map((idx) => (
+                        <Skeleton key={idx} className="w-full aspect-square rounded-xl bg-white/5" />
+                      ))}
+                    </div>
+                  )}
+
+                  {!isGenerating && generatedCardNews.map((card, idx) => (
+                    <div key={idx} className="flex flex-col gap-2 bg-white/5 p-3 rounded-xl border border-white/10 hover:border-purple-500/30 transition-colors">
+                      <span className="text-xs font-bold text-white/80">슬라이드 {idx + 1}</span>
+                      {card.image_base64 ? (
+                        <img
+                          src={`data:image/png;base64,${card.image_base64}`}
+                          alt={`Slide ${idx + 1}`}
+                          className="w-full rounded-lg object-cover aspect-square bg-black/50"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full aspect-square rounded-lg bg-gradient-to-br from-purple-900/30 to-blue-900/30 border border-white/5 flex flex-col items-center justify-center gap-3">
+                          <Sparkles className="w-8 h-8 text-purple-400 opacity-40" />
+                          <span className="text-xs text-white/30 text-center px-4">이미지를 생성하려면<br/>백엔드 서버를 실행하세요</span>
+                        </div>
+                      )}
+                      <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed bg-black/30 p-2 rounded">
+                        <span className="text-purple-400 font-bold mr-1">Prompt:</span>
+                        {card.image_prompt}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </ResizablePanel>
+            </>
+          )}
 
         </ResizablePanelGroup>
       </div>

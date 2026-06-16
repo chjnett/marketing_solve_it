@@ -1,8 +1,10 @@
 import asyncio
+import base64
 from typing import List
 from config import settings
 from google import genai
 from google.genai import types
+import json
 
 class GeminiAPIService:
     def __init__(self):
@@ -10,6 +12,7 @@ class GeminiAPIService:
         if settings.GEMINI_API_KEY:
             self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.model_name = "gemini-2.5-flash"
+        self.imagen_model = "imagen-4.0-fast-generate-001"
 
     def _get_persona_instruction(self, preset: str) -> str:
         if preset == "tech_guru":
@@ -156,5 +159,177 @@ class GeminiAPIService:
             print("[Gemini Service] Falling back to default mock copywriting data to prevent application crash.")
             return fallback_data
 
+
+    async def _generate_image_base64(self, image_prompt: str, card_index: int) -> str | None:
+        """Generate an image using Gemini Imagen API and return as Base64 string."""
+        if not self.client:
+            print(f"[Gemini Service] ⚠️ No client available for image generation (card {card_index})")
+            return None
+        
+        try:
+            print(f"[Gemini Service] 🖼️ Generating image for card {card_index} with Imagen model...")
+            print(f"[Gemini Service]   - Image Prompt: '{image_prompt[:80]}...'")
+            
+            def _call_imagen():
+                response = self.client.models.generate_images(
+                    model=self.imagen_model,
+                    prompt=image_prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        aspect_ratio="1:1",
+                        safety_filter_level="BLOCK_LOW_AND_ABOVE",
+                        person_generation="DONT_ALLOW",
+                    )
+                )
+                return response
+            
+            response = await asyncio.wait_for(
+                asyncio.to_thread(_call_imagen),
+                timeout=30.0
+            )
+            
+            if response.generated_images and len(response.generated_images) > 0:
+                image_bytes = response.generated_images[0].image.image_bytes
+                image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                print(f"[Gemini Service] ✅ Image for card {card_index} generated successfully! Base64 size: {len(image_base64)} chars")
+                return image_base64
+            else:
+                print(f"[Gemini Service] ⚠️ No images returned for card {card_index}")
+                return None
+                
+        except asyncio.TimeoutError:
+            print(f"[Gemini Service] ⏰ TIMEOUT: Imagen API did not respond in time for card {card_index}")
+            return None
+        except Exception as e:
+            print(f"[Gemini Service] 💥 ERROR generating image for card {card_index}: {type(e).__name__}: {e}")
+            return None
+
+
+    async def generate_card_news(
+        self, 
+        topic: str, 
+        preset: str, 
+        level: int,
+        forbidden: str = "",
+        required: str = ""
+    ) -> List[dict]:
+        """Call Google Gemini API to generate structured card news (image prompt + text + base64 image)"""
+        system_instruction = self._get_persona_instruction(preset)
+        
+        controversy_desc = {
+            1: "부드럽고 유용한 정보성 톤앤매너, 따뜻한 공감과 확실한 정보 전달 중심.",
+            2: "일반적인 SNS 포스트 강도, 적당한 호기심을 유발하는 어조.",
+            3: "선 넘지 않는 선에서 과감하고 확신에 찬 어조, 대중적 통념에 도전하거나 강한 주관 표출.",
+            4: "극도로 자극적이고 도발적인 어조, 강한 FOMO 유발, 논쟁적인 화두 던지기로 극단적인 스크롤 스톱(어그로) 유도."
+        }.get(level, "적당한 어조")
+
+        prompt = f"""
+다음 주제에 대해 인스타그램/스레드(Threads)에 업로드할 극도로 바이럴한 카드뉴스 기획안(3~5장의 슬라이드)을 작성해주세요.
+
+주제: {topic}
+
+[필수 작성 지침]
+1. 자극도 / 어그로 강도: {controversy_desc}
+2. 각 슬라이드별로 '이미지 묘사(프롬프트)'와 '슬라이드에 들어갈 텍스트'를 작성해야 합니다.
+3. 첫 번째 슬라이드는 스크롤을 멈추게 만들 강력한 '후킹 문구'로 시작해야 합니다.
+4. 다음 '금지 단어'들은 절대로 텍스트에 포함하면 안 됩니다: {forbidden if forbidden else "없음"}
+5. 다음 '필수 키워드'들은 텍스트 속에 매우 자연스럽고 매끄럽게 녹여내야 합니다: {required if required else "없음"}
+6. 이미지 묘사(image_prompt)는 반드시 영어로 작성하세요. Gemini Imagen API가 영어 프롬프트에 최적화되어 있습니다.
+   예: "Dark moody background with glowing neon purple text, minimalist tech aesthetic, dramatic shadows"
+
+반드시 아래 JSON 스키마를 준수하여 출력하세요. 백틱(`) 없이 순수 JSON 배열만 반환하세요.
+[
+  {{
+    "image_prompt": "Dark background with neon purple glowing text, minimalist design, high contrast",
+    "text": "100억 매출 마케터가 숨기는 \\n단 1가지 비밀"
+  }},
+  ...
+]
+"""
+
+        fallback_data = [
+            {
+                "image_prompt": "Dark background with red gradient warning icon centered, minimalist dramatic design, cinematic lighting",
+                "text": f"🔥 [어그로 레벨 {level}] 스레드 마케팅 자동화\n가장 충격적인 3가지 방법",
+                "image_base64": None
+            },
+            {
+                "image_prompt": "Mobile smartphone screen with clean typography UI design, dark theme, glowing text elements",
+                "text": f"1. 주제를 매우 구체적으로 쪼개고\n가독성 좋은 폰트를 쓸 것\n(키워드: {required if required else '자동화'})",
+                "image_base64": None
+            },
+            {
+                "image_prompt": "Artificial intelligence brain icon with holographic analysis charts floating, futuristic neon blue glow",
+                "text": "2. ThreadPulse AI 페르소나로\n오디언스의 지적 결핍을 공략",
+                "image_base64": None
+            },
+            {
+                "image_prompt": "Rocket launching into space with data traffic lines surging upward, vibrant colorful illustration",
+                "text": "알고리즘 도달률 300% 이상 차이\n#비즈니스 #스레드마케팅",
+                "image_base64": None
+            }
+        ]
+
+        if not settings.GEMINI_API_KEY or not self.client:
+            print("[Gemini Service] ⚠️ WARNING: GEMINI_API_KEY is empty. Bypassing and returning mock card news.")
+            return fallback_data
+
+        try:
+            print(f"[Gemini Service] ⚙️ Generating Card News with model='{self.model_name}'")
+            
+            def _call_gemini():
+                return self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        temperature=0.9,
+                        max_output_tokens=2048,
+                        response_mime_type="application/json"
+                    )
+                )
+
+            response = await asyncio.wait_for(
+                asyncio.to_thread(_call_gemini),
+                timeout=30.0
+            )
+            
+            text_content = response.text.strip()
+            # In case it wraps in markdown code block despite the prompt
+            if text_content.startswith("```json"):
+                text_content = text_content[7:]
+            if text_content.endswith("```"):
+                text_content = text_content[:-3]
+            text_content = text_content.strip()
+            
+            parsed_data = json.loads(text_content)
+            print(f"[Gemini Service] 🎉 Successfully parsed {len(parsed_data)} card news slides!")
+            
+            # Generate images concurrently for each card using Imagen API
+            print(f"[Gemini Service] 🖼️ Starting concurrent image generation for {len(parsed_data)} cards...")
+            image_tasks = [
+                self._generate_image_base64(card.get("image_prompt", ""), idx)
+                for idx, card in enumerate(parsed_data)
+            ]
+            image_results = await asyncio.gather(*image_tasks, return_exceptions=True)
+            
+            # Attach image_base64 to each card
+            for idx, card in enumerate(parsed_data):
+                result = image_results[idx]
+                if isinstance(result, Exception):
+                    print(f"[Gemini Service] ⚠️ Image generation exception for card {idx}: {result}")
+                    card["image_base64"] = None
+                else:
+                    card["image_base64"] = result
+            
+            print(f"[Gemini Service] 🏁 Card news generation complete! {sum(1 for r in image_results if r and not isinstance(r, Exception))}/{len(parsed_data)} images generated.")
+            return parsed_data
+            
+        except asyncio.TimeoutError:
+            print(f"[Gemini Service] ⏰ TIMEOUT: Gemini API did not respond within 30 seconds.")
+            return fallback_data
+        except Exception as e:
+            print(f"[Gemini Service] 💥 ERROR calling Gemini API for card news: {type(e).__name__}: {e}")
+            return fallback_data
 
 gemini_api_service = GeminiAPIService()
