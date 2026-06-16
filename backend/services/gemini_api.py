@@ -1,10 +1,14 @@
 import asyncio
 import base64
+import json
+import io
+import textwrap
+import os
 from typing import List
 from config import settings
 from google import genai
 from google.genai import types
-import json
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageStat
 
 class GeminiAPIService:
     def __init__(self):
@@ -178,7 +182,7 @@ class GeminiAPIService:
                         number_of_images=1,
                         aspect_ratio="1:1",
                         safety_filter_level="BLOCK_LOW_AND_ABOVE",
-                        person_generation="DONT_ALLOW",
+                        person_generation="ALLOW_ADULT",
                     )
                 )
                 return response
@@ -239,7 +243,7 @@ class GeminiAPIService:
   "typography_style": "폰트 스타일, 굵기, 크기 위계, 줄간격 특징 등 (예: 초대형 볼드 산세리프 헤드라인, 소문자 강조, 극단적 줄간격)",
   "layout_pattern": "레이아웃 구성 패턴 상세 설명 (예: 전체 배경 이미지 위 하단 그라디언트 오버레이 + 텍스트, 여백 최소화)",
   "visual_mood": "전체적인 무드와 감성 (예: 다크하고 긴박한 분위기, 프리미엄 럭셔리 느낌)",
-  "image_style_prompt": "이 스타일을 재현하기 위한 Imagen API용 영어 프롬프트 (상세하고 구체적으로)",
+  "image_style_prompt": "이 스타일을 재현하기 위한 Imagen API용 영어 프롬프트. ⚠️주의: 텍스트는 백엔드에서 합성하므로 프롬프트에 텍스트, 로고, 타이포그래피, 따옴표 묘사는 절대 포함하지 마세요. 배경, 질감, 색감, 오브젝트만 묘사하세요.",
   "design_elements": "특징적인 디자인 요소들 (아이콘, 그라디언트, 그림자, 테두리 등)",
   "extracted_texts": null,
   "main_headlines": null,
@@ -261,7 +265,7 @@ class GeminiAPIService:
   "layout_pattern": "레이아웃 패턴 (이미지+텍스트 배치, 여백 처리 방식)",
   "visual_mood": "전체적인 무드와 감성",
   "design_elements": "특징적인 디자인 요소들",
-  "image_style_prompt": "이 스타일 재현을 위한 Imagen API용 영어 프롬프트 (상세하게)"
+  "image_style_prompt": "이 스타일 재현을 위한 Imagen API용 영어 프롬프트. ⚠️주의: 텍스트는 따로 합성되므로 텍스트, 타이포그래피, 문자 묘사는 절대 포함하지 말고 순수 배경/오브젝트만 묘사하세요."
 }
 """
         }
@@ -405,8 +409,9 @@ class GeminiAPIService:
                 reference_section = f"""
 7. [레퍼런스 스타일 적용 - 매우 중요] 업로드된 레퍼런스 카드뉴스를 분석한 결과를 바탕으로, 아래 스타일 지침을 반드시 따르세요:
 {chr(10).join(parts)}
-   → image_prompt는 위의 '이미지 스타일 기준 프롬프트'를 베이스로 주제에 맞게 변형하여 작성하세요.
-   → 텍스트 구조, 언어 톤, 레이아웃 패턴을 레퍼런스와 유사하게 유지하세요.
+   → ⚠️ **매우 중요**: 위에서 언급된 '타이포그래피'와 '레이아웃 패턴'은 텍스트의 분량이나 줄바꿈을 조절하는 데만 참고하세요.
+   → **image_prompt 안에는 절대로 텍스트, 타이포그래피, 글씨, 따옴표를 그려달라고 묘사하지 마세요.**
+   → image_prompt는 오직 위의 '이미지 스타일 기준 프롬프트'와 '비주얼 무드'를 베이스로 깨끗한 배경 위주로 작성하세요.
 """
             print(f"[Gemini Service] 🎨 Reference style injected into prompt (mode: {mode})")
         
@@ -429,7 +434,9 @@ class GeminiAPIService:
 4. 다음 '금지 단어'들은 절대로 텍스트에 포함하면 안 됩니다: {forbidden if forbidden else "없음"}
 5. 다음 '필수 키워드'들은 텍스트 속에 매우 자연스럽고 매끄럽게 녹여내야 합니다: {required if required else "없음"}
 6. 이미지 묘사(image_prompt)는 반드시 영어로 작성하세요. Gemini Imagen API가 영어 프롬프트에 최적화되어 있습니다.
-   예: "Dark moody background with glowing neon purple text, minimalist tech aesthetic, dramatic shadows"
+   ⚠️ **매우 중요**: 이미지 프롬프트에 사람, 인물을 묘사하면 차단됩니다. 또한 **절대로 텍스트나 타이포그래피(text, words, letters, typography, logo)를 포함하지 마세요.** 텍스트는 백엔드에서 합성되므로 이미지는 텍스트가 없는 깨끗한 배경이나 사물로 묘사하세요.
+   추가로 **이미지 프롬프트는 무조건 긍정적, 밝음, 평화롭고 무해한 분위기**로만 묘사하세요. 어그로 강도가 높더라도 이미지만큼은 절대 폭력성이나 우울함, 자극적인 암시 없이 아름답고 깨끗하게 묘사해야 API 차단(Safety Filter)을 피할 수 있습니다.
+   예: "Clean minimalist tech aesthetic background, glowing neon purple lighting, empty central space, dark moody shadows"
 {reference_section}
 반드시 아래 JSON 스키마를 준수하여 출력하세요. 백틱(`) 없이 순수 JSON 배열만 반환하세요.
 [
@@ -478,25 +485,48 @@ class GeminiAPIService:
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
                         temperature=0.9,
-                        max_output_tokens=2048,
-                        response_mime_type="application/json"
+                        max_output_tokens=4096,
                     )
                 )
 
             response = await asyncio.wait_for(
                 asyncio.to_thread(_call_gemini),
-                timeout=30.0
+                timeout=60.0
             )
             
-            text_content = response.text.strip()
-            # In case it wraps in markdown code block despite the prompt
-            if text_content.startswith("```json"):
-                text_content = text_content[7:]
-            if text_content.endswith("```"):
-                text_content = text_content[:-3]
+            raw_text = response.text.strip()
+            text_content = raw_text
+            
+            if "```json" in text_content:
+                text_content = text_content.split("```json", 1)[1]
+            if "```" in text_content:
+                text_content = text_content.split("```")[0]
             text_content = text_content.strip()
             
-            parsed_data = json.loads(text_content)
+            if not text_content.startswith("["):
+                import re
+                match = re.search(r'\[[\s\S]+\]', text_content)
+                if match:
+                    text_content = match.group(0)
+            
+            try:
+                parsed_data = json.loads(text_content)
+            except json.JSONDecodeError as je:
+                print(f"[Gemini Service] ⚠️ JSONDecodeError in card news: {je.msg}.")
+                print(f"[Gemini Service] 📜 RAW TEXT:\n{raw_text}\n")
+                print(f"[Gemini Service] Attempting partial fix...")
+                partial = text_content[:je.pos].rstrip().rstrip(',').rstrip('"').rstrip(',')
+                open_braces = partial.count('{') - partial.count('}')
+                closing = '}' * open_braces + ']'
+                try:
+                    parsed_data = json.loads(partial + '"' + closing)
+                except Exception:
+                    try:
+                        parsed_data = json.loads(partial + closing)
+                    except Exception:
+                        print("[Gemini Service] 💥 Could not recover JSON for card news. Returning fallback.")
+                        return fallback_data
+
             print(f"[Gemini Service] 🎉 Successfully parsed {len(parsed_data)} card news slides!")
             
             # Generate images concurrently for each card using Imagen API
@@ -507,23 +537,131 @@ class GeminiAPIService:
             ]
             image_results = await asyncio.gather(*image_tasks, return_exceptions=True)
             
-            # Attach image_base64 to each card
+            # Attach image_base64 to each card and overlay text
             for idx, card in enumerate(parsed_data):
                 result = image_results[idx]
                 if isinstance(result, Exception):
                     print(f"[Gemini Service] ⚠️ Image generation exception for card {idx}: {result}")
                     card["image_base64"] = None
+                elif result:
+                    # Apply text overlay here
+                    try:
+                        overlayed_b64 = self._overlay_text_on_image(result, card.get("text", ""))
+                        card["image_base64"] = overlayed_b64
+                    except Exception as overlay_err:
+                        print(f"[Gemini Service] ⚠️ Text overlay failed for card {idx}: {overlay_err}")
+                        card["image_base64"] = result
                 else:
-                    card["image_base64"] = result
+                    card["image_base64"] = None
             
-            print(f"[Gemini Service] 🏁 Card news generation complete! {sum(1 for r in image_results if r and not isinstance(r, Exception))}/{len(parsed_data)} images generated.")
+            print(f"[Gemini Service] 🏁 Card news generation complete! {sum(1 for c in parsed_data if c.get('image_base64'))}/{len(parsed_data)} images generated.")
             return parsed_data
             
         except asyncio.TimeoutError:
-            print(f"[Gemini Service] ⏰ TIMEOUT: Gemini API did not respond within 30 seconds.")
+            print(f"[Gemini Service] ⏰ TIMEOUT: Gemini API did not respond within 60 seconds.")
             return fallback_data
         except Exception as e:
             print(f"[Gemini Service] 💥 ERROR calling Gemini API for card news: {type(e).__name__}: {e}")
             return fallback_data
+
+    def _overlay_text_on_image(self, image_b64: str, text: str) -> str:
+        """Helper to overlay wrapped text onto a base64 image using Pillow."""
+        if not text:
+            return image_b64
+            
+        try:
+            # 1. Decode image
+            image_bytes = base64.b64decode(image_b64)
+            img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+            width, height = img.size
+            
+            # 2. Load Font
+            font_path = os.path.join("assets", "fonts", "Pretendard-Bold.otf")
+            font_size = max(int(width * 0.05), 32)
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+            except Exception:
+                font = ImageFont.load_default()
+                
+            # 3. Create dummy draw to calculate text size
+            dummy_draw = ImageDraw.Draw(Image.new('RGBA', (1,1)))
+            
+            # Determine max chars per line based on font size. Roughly width / (font_size * 0.7)
+            chars_per_line = max(int(width / (font_size * 0.7)), 10)
+            wrapped_lines = []
+            for line in text.splitlines():
+                wrapped_lines.extend(textwrap.wrap(line, width=chars_per_line))
+            
+            # Calculate total text height
+            total_text_height = sum(
+                dummy_draw.textbbox((0, 0), line, font=font)[3] - dummy_draw.textbbox((0, 0), line, font=font)[1] + 15
+                for line in wrapped_lines
+            )
+            
+            # 4. Smart Edge Detection: Find the least busy area
+            img_gray = img.convert("L")
+            top_crop = img_gray.crop((0, 0, width, int(height * 0.35)))
+            bottom_crop = img_gray.crop((0, int(height * 0.65), width, height))
+            
+            top_edges = top_crop.filter(ImageFilter.FIND_EDGES)
+            bottom_edges = bottom_crop.filter(ImageFilter.FIND_EDGES)
+            
+            top_energy = ImageStat.Stat(top_edges).sum[0]
+            bottom_energy = ImageStat.Stat(bottom_edges).sum[0]
+            
+            place_text_top = top_energy < bottom_energy
+            
+            # 5. Position text and gradient
+            margin = int(height * 0.1)
+            gradient_height = int(total_text_height + margin * 2)
+            
+            overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            draw_overlay = ImageDraw.Draw(overlay)
+            
+            if place_text_top:
+                y_text = margin
+                for y in range(gradient_height):
+                    # Fades from top (black) to bottom (transparent)
+                    alpha = int((1 - y / gradient_height) * 230)
+                    draw_overlay.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
+                # Dim the rest
+                draw_overlay.rectangle([(0, gradient_height), (width, height)], fill=(0, 0, 0, 40))
+            else:
+                y_text = height - total_text_height - margin
+                gradient_start_y = height - gradient_height
+                for y in range(gradient_height):
+                    # Fades from top (transparent) to bottom (black)
+                    alpha = int((y / gradient_height) * 230)
+                    draw_overlay.line([(0, gradient_start_y + y), (width, gradient_start_y + y)], fill=(0, 0, 0, alpha))
+                # Dim the rest
+                draw_overlay.rectangle([(0, 0), (width, gradient_start_y)], fill=(0, 0, 0, 40))
+            
+            img = Image.alpha_composite(img, overlay)
+            draw = ImageDraw.Draw(img)
+            
+            # 5. Draw text line by line (Center aligned)
+            for line in wrapped_lines:
+                bbox = draw.textbbox((0, 0), line, font=font)
+                line_width = bbox[2] - bbox[0]
+                line_height = bbox[3] - bbox[1]
+                x_text = (width - line_width) / 2
+                
+                # Draw drop shadow
+                shadow_offset = max(int(font_size * 0.05), 2)
+                draw.text((x_text + shadow_offset, y_text + shadow_offset), line, font=font, fill=(0, 0, 0, 200))
+                
+                # Draw main text
+                draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255, 255))
+                y_text += line_height + 10
+                
+            # 6. Encode back to base64 JPEG
+            img = img.convert("RGB")
+            buffered = io.BytesIO()
+            img.save(buffered, format="JPEG", quality=90)
+            return base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+        except Exception as e:
+            print(f"[Gemini Service] ⚠️ Exception inside _overlay_text_on_image: {e}")
+            return image_b64
 
 gemini_api_service = GeminiAPIService()

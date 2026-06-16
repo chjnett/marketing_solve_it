@@ -7,8 +7,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   Sparkles, Smartphone, Edit3, Trash2, Send, 
   MessageCircle, RefreshCw, Layers, Smile, AlertCircle,
-  ImagePlus, ScanSearch, CheckCircle2, X, Upload
+  ImagePlus, ScanSearch, CheckCircle2, X, Upload, Download
 } from "lucide-react";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -208,6 +210,33 @@ export default function BuilderPage() {
     setGeneratedThreads(updated);
   };
 
+  const handleDownloadAllImages = async () => {
+    if (generatedCardNews.length === 0) return;
+    
+    const zip = new JSZip();
+    let hasImages = false;
+
+    generatedCardNews.forEach((card, index) => {
+      if (card.image_base64) {
+        hasImages = true;
+        // Add base64 string to zip
+        zip.file(`cardnews_slide_${index + 1}.jpg`, card.image_base64, { base64: true });
+      }
+    });
+
+    if (!hasImages) {
+      alert("다운로드할 수 있는 이미지가 없습니다.");
+      return;
+    }
+
+    try {
+      const content = await zip.generateAsync({ type: "blob" });
+      saveAs(content, "threadpulse_cardnews.zip");
+    } catch (error) {
+      console.error("ZIP 생성 오류:", error);
+      alert("ZIP 파일 생성 중 오류가 발생했습니다.");
+    }
+  };
 
   return (
     <div className="h-[calc(100vh-8.5rem)] flex flex-col gap-6 -m-4 p-4 overflow-hidden">
@@ -741,9 +770,21 @@ export default function BuilderPage() {
               <ResizablePanel defaultSize={30} minSize={20}>
                 <div className="h-full p-4 overflow-y-auto bg-black/60 flex flex-col gap-4 border-l border-white/5">
                   <div className="flex flex-col gap-1 pb-2 border-b border-white/5">
-                    <h3 className="font-heading text-sm font-bold text-white flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-purple-400" /> AI 생성 원본 이미지
-                    </h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-heading text-sm font-bold text-white flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-purple-400" /> AI 생성 이미지 갤러리
+                      </h3>
+                      {generatedCardNews.length > 0 && !isGenerating && (
+                        <Button 
+                          onClick={handleDownloadAllImages}
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-7 text-[10px] text-purple-300 hover:text-white hover:bg-purple-500/20"
+                        >
+                          <Download className="w-3 h-3 mr-1" /> 일괄 다운로드
+                        </Button>
+                      )}
+                    </div>
                     <p className="text-[10px] text-muted-foreground">프롬프트를 바탕으로 실시간 렌더링된 고화질 이미지입니다.</p>
                   </div>
                   
@@ -774,7 +815,7 @@ export default function BuilderPage() {
                       ) : (
                         <div className="w-full aspect-square rounded-lg bg-gradient-to-br from-purple-900/30 to-blue-900/30 border border-white/5 flex flex-col items-center justify-center gap-3">
                           <Sparkles className="w-8 h-8 text-purple-400 opacity-40" />
-                          <span className="text-xs text-white/30 text-center px-4">이미지를 생성하려면<br/>백엔드 서버를 실행하세요</span>
+                          <span className="text-xs text-white/30 text-center px-4">이미지 생성 차단<br/><span className="text-[10px]">(AI 정책: 인물/폭력적 묘사 제한)</span></span>
                         </div>
                       )}
                       <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed bg-black/30 p-2 rounded">
