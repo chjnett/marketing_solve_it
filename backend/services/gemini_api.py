@@ -205,16 +205,210 @@ class GeminiAPIService:
             return None
 
 
+    async def analyze_reference_images(
+        self,
+        images_base64: List[str],
+        analysis_mode: str = "full"  # "ocr_only" | "style_only" | "full"
+    ) -> dict:
+        """Analyze reference card news images with Gemini Vision and extract style/text info."""
+        if not self.client:
+            return {"error": "Gemini client not initialized. Check GEMINI_API_KEY."}
+
+        mode_prompts = {
+            "ocr_only": """
+당신은 전문 OCR 엔진입니다. 주어진 카드뉴스 이미지에서 텍스트를 정확하게 추출하세요.
+
+반드시 아래 JSON 형식으로만 응답하세요 (백틱 없이 순수 JSON):
+{
+  "extracted_texts": ["이미지1에서 추출한 전체 텍스트", "이미지2에서 추출한 전체 텍스트"],
+  "main_headlines": ["각 카드의 핵심 헤드라인만 추출"],
+  "content_structure": "텍스트 구조 설명 (예: 헤드라인 + 본문 + CTA 형식)",
+  "language_tone": "언어 톤 분석 (예: 반말/존댓말, 직설적/부드러운 등)",
+  "color_palette": null,
+  "typography_style": null,
+  "layout_pattern": null,
+  "image_style_prompt": null
+}
+""",
+            "style_only": """
+당신은 전문 그래픽 디자인 분석가입니다. 주어진 카드뉴스 이미지의 시각적 스타일을 상세히 분석하세요. 텍스트 내용보다 디자인 요소에 집중하세요.
+
+반드시 아래 JSON 형식으로만 응답하세요 (백틱 없이 순수 JSON):
+{
+  "color_palette": "주 배경색, 강조색, 텍스트색 등 색상 체계 상세 설명 (예: 딥 다크 네이비 #0a0a1a 배경, 네온 퍼플 #9b59b6 강조, 흰색 텍스트)",
+  "typography_style": "폰트 스타일, 굵기, 크기 위계, 줄간격 특징 등 (예: 초대형 볼드 산세리프 헤드라인, 소문자 강조, 극단적 줄간격)",
+  "layout_pattern": "레이아웃 구성 패턴 상세 설명 (예: 전체 배경 이미지 위 하단 그라디언트 오버레이 + 텍스트, 여백 최소화)",
+  "visual_mood": "전체적인 무드와 감성 (예: 다크하고 긴박한 분위기, 프리미엄 럭셔리 느낌)",
+  "image_style_prompt": "이 스타일을 재현하기 위한 Imagen API용 영어 프롬프트 (상세하고 구체적으로)",
+  "design_elements": "특징적인 디자인 요소들 (아이콘, 그라디언트, 그림자, 테두리 등)",
+  "extracted_texts": null,
+  "main_headlines": null,
+  "content_structure": null,
+  "language_tone": null
+}
+""",
+            "full": """
+당신은 카드뉴스 전문 분석가입니다. 주어진 카드뉴스 이미지를 OCR 텍스트 추출과 시각적 디자인 스타일 두 가지 측면에서 완전히 분석하세요.
+
+반드시 아래 JSON 형식으로만 응답하세요 (백틱 없이 순수 JSON):
+{
+  "extracted_texts": ["이미지별 전체 텍스트 내용 추출"],
+  "main_headlines": ["각 카드의 핵심 헤드라인"],
+  "content_structure": "콘텐츠 구조 설명 (헤드라인/본문/CTA 구성)",
+  "language_tone": "언어 톤 분석 (반말/존댓말, 직설적/감성적, 자극적/정보성)",
+  "color_palette": "주 배경색, 강조색, 텍스트색 체계 (가능하면 hex 포함)",
+  "typography_style": "폰트 스타일, 굵기, 크기 위계, 특징적 표현 방식",
+  "layout_pattern": "레이아웃 패턴 (이미지+텍스트 배치, 여백 처리 방식)",
+  "visual_mood": "전체적인 무드와 감성",
+  "design_elements": "특징적인 디자인 요소들",
+  "image_style_prompt": "이 스타일 재현을 위한 Imagen API용 영어 프롬프트 (상세하게)"
+}
+"""
+        }
+
+        analysis_prompt = mode_prompts.get(analysis_mode, mode_prompts["full"])
+        mode_label = {"ocr_only": "OCR 텍스트 추출", "style_only": "스타일 분석", "full": "통합 분석"}.get(analysis_mode, "통합 분석")
+
+        print(f"[Gemini Service] 🔍 Starting reference analysis - Mode: '{mode_label}', Images: {len(images_base64)}")
+
+        try:
+            def _call_vision():
+                # Build multimodal contents: [image, image, ..., text_prompt]
+                contents = []
+                for i, img_b64 in enumerate(images_base64[:5]):  # max 5 images
+                    # Auto-detect mime type from base64 header bytes
+                    raw = base64.b64decode(img_b64[:16])
+                    if raw[:4] == b'\x89PNG':
+                        mime = "image/png"
+                    elif raw[:4] == b'RIFF':
+                        mime = "image/webp"
+                    else:
+                        mime = "image/jpeg"
+                    contents.append(
+                        types.Part.from_bytes(
+                            data=base64.b64decode(img_b64),
+                            mime_type=mime
+                        )
+                    )
+                    print(f"[Gemini Service]   - Attached image {i+1} (mime: {mime}, size: {len(img_b64)} chars)")
+                contents.append(types.Part.from_text(text=analysis_prompt))
+
+                # NOTE: Do NOT set response_mime_type="application/json" here.
+                # It causes Gemini to truncate the response mid-JSON when the content
+                # is long. We parse JSON manually instead.
+                return self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        temperature=0.2,
+                        max_output_tokens=4096,
+                    )
+                )
+
+            response = await asyncio.wait_for(
+                asyncio.to_thread(_call_vision),
+                timeout=60.0
+            )
+
+            raw_text = response.text.strip()
+            print(f"[Gemini Service] 📥 Raw response length: {len(raw_text)} chars")
+
+            # Robust JSON extraction: strip markdown fences, then find first { ... } block
+            text_content = raw_text
+            if "```json" in text_content:
+                text_content = text_content.split("```json", 1)[1]
+            if "```" in text_content:
+                text_content = text_content.split("```")[0]
+            text_content = text_content.strip()
+
+            # If still not valid JSON, try to extract the first {...} block via regex
+            if not text_content.startswith("{"):
+                import re
+                match = re.search(r'\{[\s\S]+\}', text_content)
+                if match:
+                    text_content = match.group(0)
+                    print(f"[Gemini Service] 🔧 Extracted JSON block via regex")
+
+            try:
+                result = json.loads(text_content)
+            except json.JSONDecodeError as je:
+                # Last resort: try to fix common truncation by closing open strings/arrays
+                print(f"[Gemini Service] ⚠️ JSONDecodeError at char {je.pos}: {je.msg}. Attempting partial fix...")
+                # Truncate at the error position and close the object
+                partial = text_content[:je.pos].rstrip().rstrip(',').rstrip('"').rstrip(',')
+                # Count unclosed braces/brackets
+                open_braces = partial.count('{') - partial.count('}')
+                open_brackets = partial.count('[') - partial.count(']')
+                closing = ']' * open_brackets + '}' * open_braces
+                try:
+                    result = json.loads(partial + '"' + closing)
+                except Exception:
+                    try:
+                        result = json.loads(partial + closing)
+                    except Exception:
+                        print(f"[Gemini Service] 💥 Could not recover JSON. Returning partial raw analysis.")
+                        return {
+                            "error": None,
+                            "analysis_mode": analysis_mode,
+                            "image_count": len(images_base64),
+                            "raw_analysis": raw_text[:1000],
+                            "language_tone": "분석 결과를 파싱하는 데 실패했습니다. 다시 시도해주세요.",
+                        }
+
+            result["analysis_mode"] = analysis_mode
+            result["image_count"] = len(images_base64)
+            print(f"[Gemini Service] ✅ Reference analysis complete! Mode: {mode_label}")
+            return result
+
+        except asyncio.TimeoutError:
+            print("[Gemini Service] ⏰ TIMEOUT during reference analysis")
+            return {"error": "분석 시간이 초과되었습니다. 다시 시도해주세요.", "analysis_mode": analysis_mode}
+        except Exception as e:
+            print(f"[Gemini Service] 💥 ERROR during reference analysis: {type(e).__name__}: {e}")
+            return {"error": f"분석 중 오류가 발생했습니다: {str(e)}", "analysis_mode": analysis_mode}
+
+
     async def generate_card_news(
         self, 
         topic: str, 
         preset: str, 
         level: int,
         forbidden: str = "",
-        required: str = ""
+        required: str = "",
+        reference_style: dict | None = None
     ) -> List[dict]:
         """Call Google Gemini API to generate structured card news (image prompt + text + base64 image)"""
         system_instruction = self._get_persona_instruction(preset)
+
+        # Build reference style section to inject into the prompt
+        reference_section = ""
+        if reference_style and not reference_style.get("error"):
+            mode = reference_style.get("analysis_mode", "full")
+            parts = []
+            if reference_style.get("extracted_texts"):
+                parts.append(f"- 레퍼런스 텍스트 스타일: {'; '.join(reference_style['extracted_texts'][:3])}")
+            if reference_style.get("language_tone"):
+                parts.append(f"- 언어 톤앤매너: {reference_style['language_tone']}")
+            if reference_style.get("content_structure"):
+                parts.append(f"- 콘텐츠 구조: {reference_style['content_structure']}")
+            if reference_style.get("color_palette"):
+                parts.append(f"- 색상 팔레트: {reference_style['color_palette']}")
+            if reference_style.get("typography_style"):
+                parts.append(f"- 타이포그래피: {reference_style['typography_style']}")
+            if reference_style.get("layout_pattern"):
+                parts.append(f"- 레이아웃 패턴: {reference_style['layout_pattern']}")
+            if reference_style.get("visual_mood"):
+                parts.append(f"- 비주얼 무드: {reference_style['visual_mood']}")
+            if reference_style.get("image_style_prompt"):
+                parts.append(f"- 이미지 스타일 기준 프롬프트: {reference_style['image_style_prompt']}")
+            if parts:
+                reference_section = f"""
+7. [레퍼런스 스타일 적용 - 매우 중요] 업로드된 레퍼런스 카드뉴스를 분석한 결과를 바탕으로, 아래 스타일 지침을 반드시 따르세요:
+{chr(10).join(parts)}
+   → image_prompt는 위의 '이미지 스타일 기준 프롬프트'를 베이스로 주제에 맞게 변형하여 작성하세요.
+   → 텍스트 구조, 언어 톤, 레이아웃 패턴을 레퍼런스와 유사하게 유지하세요.
+"""
+            print(f"[Gemini Service] 🎨 Reference style injected into prompt (mode: {mode})")
         
         controversy_desc = {
             1: "부드럽고 유용한 정보성 톤앤매너, 따뜻한 공감과 확실한 정보 전달 중심.",
@@ -236,7 +430,7 @@ class GeminiAPIService:
 5. 다음 '필수 키워드'들은 텍스트 속에 매우 자연스럽고 매끄럽게 녹여내야 합니다: {required if required else "없음"}
 6. 이미지 묘사(image_prompt)는 반드시 영어로 작성하세요. Gemini Imagen API가 영어 프롬프트에 최적화되어 있습니다.
    예: "Dark moody background with glowing neon purple text, minimalist tech aesthetic, dramatic shadows"
-
+{reference_section}
 반드시 아래 JSON 스키마를 준수하여 출력하세요. 백틱(`) 없이 순수 JSON 배열만 반환하세요.
 [
   {{

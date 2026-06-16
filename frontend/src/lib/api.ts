@@ -98,12 +98,12 @@ export const api = {
   },
 
   // 3.5 POST /api/v1/ai/generate-card-news
-  async generateCardNews(topic: string, persona: string, level: number) {
+  async generateCardNews(topic: string, persona: string, level: number, referenceStyle?: object | null) {
     return apiFetch(
       "/api/v1/ai/generate-card-news",
       {
         method: "POST",
-        body: JSON.stringify({ topic, persona, level }),
+        body: JSON.stringify({ topic, persona, level, reference_style: referenceStyle ?? null }),
       },
       [
         {
@@ -281,6 +281,31 @@ export const api = {
       { method: "DELETE" },
       { success: true }
     );
-  }
-};
+  },
 
+  // 11. POST /api/v1/ai/analyze-reference
+  async analyzeReference(images: string[], analysisMode: "ocr_only" | "style_only" | "full" = "full") {
+    return apiFetch<any>(
+      "/api/v1/ai/analyze-reference",
+      {
+        method: "POST",
+        body: JSON.stringify({ images, analysis_mode: analysisMode }),
+      },
+      // Mock fallback when backend is offline
+      {
+        analysis_mode: analysisMode,
+        image_count: images.length,
+        extracted_texts: analysisMode !== "style_only" ? ["[Mock] 백엔드 서버 오프라인 - 샘플 텍스트입니다"] : null,
+        main_headlines: analysisMode !== "style_only" ? ["[Mock] 샘플 헤드라인"] : null,
+        content_structure: analysisMode !== "style_only" ? "헤드라인 + 본문 + CTA 구조" : null,
+        language_tone: analysisMode !== "style_only" ? "자극적이고 도발적인 반말 어조" : null,
+        color_palette: analysisMode !== "ocr_only" ? "어두운 배경 (#0a0a1a), 네온 퍼플 강조색, 흰색 텍스트" : null,
+        typography_style: analysisMode !== "ocr_only" ? "초대형 볼드 산세리프 헤드라인, 극단적 줄간격" : null,
+        layout_pattern: analysisMode !== "ocr_only" ? "전체 배경 이미지 + 하단 텍스트 오버레이" : null,
+        visual_mood: analysisMode !== "ocr_only" ? "다크하고 긴박한 프리미엄 분위기" : null,
+        image_style_prompt: analysisMode !== "ocr_only" ? "Dark moody cinematic background, neon purple accent lights, dramatic shadows, high contrast, premium editorial style" : null,
+        design_elements: analysisMode !== "ocr_only" ? "네온 글로우 효과, 그라디언트 오버레이, 미니멀한 아이콘" : null,
+      }
+    );
+  },
+};

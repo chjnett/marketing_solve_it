@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Sparkles, Smartphone, Edit3, Trash2, Send, 
-  MessageCircle, RefreshCw, Layers, Smile, AlertCircle
+  MessageCircle, RefreshCw, Layers, Smile, AlertCircle,
+  ImagePlus, ScanSearch, CheckCircle2, X, Upload
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,13 @@ export default function BuilderPage() {
   const [tone, setTone] = useState("informative");
   const [generateMode, setGenerateMode] = useState<"thread" | "card_news">("thread");
   const [generatedCardNews, setGeneratedCardNews] = useState<any[]>([]);
+
+  // Reference image analysis state
+  const [referenceImages, setReferenceImages] = useState<{ file: string; preview: string }[]>([]);
+  const [analysisMode, setAnalysisMode] = useState<"ocr_only" | "style_only" | "full">("full");
+  const [referenceStyle, setReferenceStyle] = useState<any>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [generatedThreads, setGeneratedThreads] = useState<string[]>([
     "Threads는 텍스트 중심의 소통을 위한 완벽한 공간입니다. 🚀 오늘부터 ThreadPulse를 활용하여 비즈니스의 심박수를 높여보세요! #스레드 #자동화",
@@ -45,9 +53,9 @@ export default function BuilderPage() {
   });
 
   const generateCardNewsMutation = useMutation({
-    mutationFn: ({ topic, persona, level }: any) => {
-      console.log(`%c[Builder Page] 📡 useMutation triggered. Calling api.generateCardNews with topic: "${topic}", persona: "${persona}", aggroLevel: ${level}`, "color: #3B82F6; font-weight: bold;");
-      return api.generateCardNews(topic, persona, level);
+    mutationFn: ({ topic, persona, level, refStyle }: any) => {
+      console.log(`%c[Builder Page] 📡 useMutation triggered. Calling api.generateCardNews with topic: "${topic}", persona: "${persona}", aggroLevel: ${level}, hasRef: ${!!refStyle}`, "color: #3B82F6; font-weight: bold;");
+      return api.generateCardNews(topic, persona, level, refStyle);
     },
     onSuccess: (data) => {
       console.log(`%c[Builder Page] 🏆 Mutation successful! Setting generatedCardNews state to:`, "color: #10B981; font-weight: bold;", data);
@@ -55,6 +63,20 @@ export default function BuilderPage() {
     },
     onError: (err) => {
       console.error(`%c[Builder Page] 💥 Mutation error occurred:`, "color: #EF4444; font-weight: bold;", err);
+    }
+  });
+
+  const analyzeReferenceMutation = useMutation({
+    mutationFn: ({ images, mode }: { images: string[]; mode: "ocr_only" | "style_only" | "full" }) => {
+      console.log(`%c[Builder Page] 🔍 Analyzing ${images.length} reference images, mode: ${mode}`, "color: #8B5CF6; font-weight: bold;");
+      return api.analyzeReference(images, mode);
+    },
+    onSuccess: (data) => {
+      console.log(`%c[Builder Page] ✅ Reference analysis complete:`, "color: #10B981; font-weight: bold;", data);
+      setReferenceStyle(data);
+    },
+    onError: (err) => {
+      console.error(`%c[Builder Page] 💥 Reference analysis error:`, "color: #EF4444; font-weight: bold;", err);
     }
   });
 
@@ -73,6 +95,61 @@ export default function BuilderPage() {
   });
 
   const isGenerating = generateMode === "thread" ? generateMutation.isPending : generateCardNewsMutation.isPending;
+  const isAnalyzing = analyzeReferenceMutation.isPending;
+
+  // Convert File to base64
+  const fileToBase64 = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data:image/...;base64, prefix
+        resolve(result.split(",")[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handleImageFiles = useCallback(async (files: FileList | File[]) => {
+    const fileArr = Array.from(files).slice(0, 5 - referenceImages.length);
+    const newImages = await Promise.all(
+      fileArr.map(async (file) => ({
+        file: await fileToBase64(file),
+        preview: URL.createObjectURL(file),
+      }))
+    );
+    setReferenceImages((prev) => [...prev, ...newImages].slice(0, 5));
+    // Reset previous analysis when new images added
+    setReferenceStyle(null);
+  }, [referenceImages.length, fileToBase64]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files.length > 0) handleImageFiles(e.dataTransfer.files);
+  }, [handleImageFiles]);
+
+  // Global paste handler — active only in card_news mode
+  const handlePaste = useCallback(async (e: ClipboardEvent) => {
+    if (generateMode !== "card_news") return;
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const imageItems = items.filter(item => item.type.startsWith("image/"));
+    if (imageItems.length === 0) return;
+    e.preventDefault();
+    const files = imageItems
+      .map(item => item.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (files.length > 0) {
+      console.log(`%c[Builder Page] 📋 Paste detected: ${files.length} image(s)`, "color: #8B5CF6; font-weight: bold;");
+      await handleImageFiles(files);
+    }
+  }, [generateMode, handleImageFiles]);
+
+  useEffect(() => {
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [handlePaste]);
 
   const handleGenerate = () => {
     console.log(`\n%c[Builder Page] 🖱️ AI Generate Button Clicked!`, "color: #F59E0B; font-weight: bold;");
@@ -81,6 +158,7 @@ export default function BuilderPage() {
     console.log(`[Builder Page] - Persona: "${persona}"`);
     console.log(`[Builder Page] - Aggro Level: ${aggroLevel[0]}`);
     console.log(`[Builder Page] - Tone: "${tone}"`);
+    console.log(`[Builder Page] - Reference Style: ${referenceStyle ? '✅ Applied' : '❌ None'}`);
     
     try {
       const modeStr = Array.isArray(generateMode) ? generateMode[0] : generateMode;
@@ -97,6 +175,7 @@ export default function BuilderPage() {
           topic,
           persona,
           level: aggroLevel[0],
+          refStyle: referenceStyle,
         });
       } else {
         console.error(`[Builder Page] ❌ Invalid generateMode detected: ${generateMode}`);
@@ -238,32 +317,189 @@ export default function BuilderPage() {
                 </Select>
               </div>
 
-              {/* Tone Toggle Group */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-muted-foreground">톤앤매너 설정</label>
-                <div className="flex flex-wrap gap-2 justify-start">
-                  {[
-                    { id: "informative", label: "ℹ️ 정보 전달형" },
-                    { id: "storytelling", label: "📖 스토리텔링형" },
-                    { id: "challenging", label: "⚡ 도발/자극형" },
-                  ].map((item) => {
-                    const isActive = tone === item.id;
-                    return (
+              {/* Reference Image Upload — only shown in card_news mode */}
+              {generateMode === "card_news" && (
+                <>
+                  <hr className="border-white/5" />
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                      <h3 className="font-heading text-base font-bold text-white flex items-center gap-2">
+                        <ScanSearch className="w-4 h-4 text-purple-400" />
+                        2. 레퍼런스 분석 <span className="text-[10px] font-normal text-muted-foreground ml-1">(선택)</span>
+                      </h3>
+                      <p className="text-[10px] text-muted-foreground">카드뉴스 레퍼런스 이미지를 올리면 Gemini Vision이 스타일을 분석해 생성에 반영합니다.</p>
+                    </div>
+
+                    {/* Analysis Mode Selector */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">분석 범위</label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {([
+                          { id: "ocr_only", label: "📝 텍스트만", desc: "OCR 추출" },
+                          { id: "style_only", label: "🎨 스타일만", desc: "디자인 분석" },
+                          { id: "full", label: "⚡ 통합분석", desc: "텍스트+스타일" },
+                        ] as const).map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setAnalysisMode(m.id)}
+                            className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-lg border text-center transition-all cursor-pointer ${
+                              analysisMode === m.id
+                                ? "bg-purple-600/20 border-purple-500/50 text-purple-300"
+                                : "bg-white/3 border-white/8 text-muted-foreground hover:border-white/20"
+                            }`}
+                          >
+                            <span className="text-[11px] font-bold">{m.label}</span>
+                            <span className="text-[9px] opacity-70">{m.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Drag & Drop Upload Zone */}
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                      onDragLeave={() => setIsDragOver(false)}
+                      onDrop={handleDrop}
+                      onClick={() => referenceImages.length < 5 && fileInputRef.current?.click()}
+                      className={`relative border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer min-h-[80px] ${
+                        isDragOver
+                          ? "border-purple-400 bg-purple-500/10"
+                          : referenceImages.length > 0
+                          ? "border-white/10 bg-white/3 hover:border-white/20"
+                          : "border-white/10 hover:border-purple-400/40 hover:bg-purple-500/5"
+                      }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => e.target.files && handleImageFiles(e.target.files)}
+                      />
+
+                      {referenceImages.length === 0 ? (
+                        <>
+                          <Upload className="w-6 h-6 text-purple-400/60" />
+                          <div className="text-center">
+                            <p className="text-xs text-white/60 font-semibold">드래그 · 클릭 · 붙여넣기</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">최대 5장 · JPG, PNG, WEBP</p>
+                            <p className="text-[9px] text-purple-400/60 mt-1">⌘V / Ctrl+V 로도 추가 가능</p>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="w-full">
+                          <div className="grid grid-cols-5 gap-1.5 mb-2">
+                            {referenceImages.map((img, i) => (
+                              <div key={i} className="relative group aspect-square">
+                                <img
+                                  src={img.preview}
+                                  alt={`ref ${i + 1}`}
+                                  className="w-full h-full object-cover rounded-lg border border-white/10"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setReferenceImages((prev) => prev.filter((_, idx) => idx !== i));
+                                    setReferenceStyle(null);
+                                  }}
+                                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white hidden group-hover:flex items-center justify-center cursor-pointer"
+                                >
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            ))}
+                            {referenceImages.length < 5 && (
+                              <div className="aspect-square rounded-lg border border-dashed border-white/20 flex items-center justify-center">
+                                <ImagePlus className="w-4 h-4 text-white/30" />
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-[9px] text-muted-foreground text-center">
+                            {referenceImages.length}/5장 업로드됨 · 클릭하여 추가
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Analyze Button */}
+                    {referenceImages.length > 0 && (
                       <button
-                        key={item.id}
-                        onClick={() => setTone(item.id)}
-                        className={`text-xs py-1.5 px-3 h-8 rounded-lg border transition-all cursor-pointer ${
-                          isActive
-                            ? "bg-purple-600/20 border-purple-500/30 text-purple-400 font-bold"
-                            : "bg-white/5 border-white/5 hover:border-white/10 text-muted-foreground hover:text-white"
+                        type="button"
+                        onClick={() => analyzeReferenceMutation.mutate({
+                          images: referenceImages.map(i => i.file),
+                          mode: analysisMode,
+                        })}
+                        disabled={isAnalyzing}
+                        className={`w-full h-9 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all border ${
+                          referenceStyle
+                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20"
+                            : isAnalyzing
+                            ? "bg-purple-600/20 border-purple-500/30 text-purple-300 cursor-not-allowed"
+                            : "bg-purple-600/15 border-purple-500/30 text-purple-300 hover:bg-purple-600/25"
                         }`}
                       >
-                        {item.label}
+                        {isAnalyzing ? (
+                          <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Gemini Vision 분석 중...</>
+                        ) : referenceStyle ? (
+                          <><CheckCircle2 className="w-3.5 h-3.5" /> 분석 완료 — 재분석하기</>
+                        ) : (
+                          <><ScanSearch className="w-3.5 h-3.5" /> 레퍼런스 분석 시작</>
+                        )}
                       </button>
-                    );
-                  })}
-                </div>
-              </div>
+                    )}
+
+                    {/* Analysis Result Card */}
+                    {referenceStyle && !referenceStyle.error && (
+                      <div className="flex flex-col gap-2 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span className="text-[11px] font-bold text-emerald-300">분석 완료 · 생성 시 자동 적용됩니다</span>
+                        </div>
+                        {referenceStyle.language_tone && (
+                          <div className="flex gap-2">
+                            <span className="text-[9px] font-bold text-purple-400 shrink-0 w-14">언어 톤</span>
+                            <span className="text-[9px] text-white/70 leading-relaxed">{referenceStyle.language_tone}</span>
+                          </div>
+                        )}
+                        {referenceStyle.color_palette && (
+                          <div className="flex gap-2">
+                            <span className="text-[9px] font-bold text-purple-400 shrink-0 w-14">색상</span>
+                            <span className="text-[9px] text-white/70 leading-relaxed line-clamp-2">{referenceStyle.color_palette}</span>
+                          </div>
+                        )}
+                        {referenceStyle.layout_pattern && (
+                          <div className="flex gap-2">
+                            <span className="text-[9px] font-bold text-purple-400 shrink-0 w-14">레이아웃</span>
+                            <span className="text-[9px] text-white/70 leading-relaxed line-clamp-2">{referenceStyle.layout_pattern}</span>
+                          </div>
+                        )}
+                        {referenceStyle.visual_mood && (
+                          <div className="flex gap-2">
+                            <span className="text-[9px] font-bold text-purple-400 shrink-0 w-14">무드</span>
+                            <span className="text-[9px] text-white/70 leading-relaxed">{referenceStyle.visual_mood}</span>
+                          </div>
+                        )}
+                        {referenceStyle.main_headlines?.length > 0 && (
+                          <div className="flex gap-2">
+                            <span className="text-[9px] font-bold text-purple-400 shrink-0 w-14">헤드라인</span>
+                            <span className="text-[9px] text-white/70 leading-relaxed line-clamp-2">{referenceStyle.main_headlines.join(" / ")}</span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => { setReferenceStyle(null); }}
+                          className="text-[9px] text-red-400/60 hover:text-red-400 transition-colors mt-1 text-left cursor-pointer"
+                        >
+                          ✕ 레퍼런스 적용 해제
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
 
               <hr className="border-white/5" />
 
